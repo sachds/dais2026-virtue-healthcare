@@ -385,7 +385,28 @@ async function runCopilot(){
     renderCopilot(r);
   }catch(e){ $("copilot-body").innerHTML = `<div class="empty">Copilot error: ${esc(e.message)}</div>`; }
 }
+function renderCareTeam(r){
+  const p=r.plan||{};
+  const chips=`<span class="chip" style="text-transform:capitalize">${esc(p.condition||'')}</span>`+(p.location?` <span class="chip">📍 ${esc(p.location)}</span>`:"")+(p.visits?` <span class="chip">${p.visits} visits/mo</span>`:"");
+  const trace=(r.trace||[]).map(traceStep).join("");
+  const banner=r.escalation?`<div class="ct-escalate">⤴ Escalate · ${esc(r.escalation)}</div>`:"";
+  const roles=(r.care_team||[]).map(role=>{
+    const facs=(role.facilities||[]).map((f,i)=>`<div class="ct-fac${i===0?' near':''}" onclick="selectFacility('${esc(f.id)}')">
+      ${i===0?'<span class="ct-nearest">nearest</span> ':''}<b>${esc(f.name||'')}</b>
+      <div class="muted">${esc([f.city,f.state].filter(Boolean).join(', '))}${f.km!=null?' · '+f.km+' km':''}</div></div>`).join("");
+    return `<div class="ct-role"><div class="ct-role-h">${esc(role.role)}</div>${facs||'<div class="muted" style="padding:6px 0">No local provider found.</div>'}</div>`;
+  }).join("");
+  $("copilot-body").innerHTML=`
+    <div class="cp-plan"><b>Care team:</b> ${chips}</div>
+    <div class="evidence-lbl" style="margin:12px 16px 4px">How the agent worked</div>
+    <div class="cp-trace">${trace}</div>
+    ${banner}
+    ${r.answer?`<div class="cp-answer">${esc(r.answer)}</div>`:""}
+    <div class="evidence-lbl" style="margin:14px 16px 4px">The care team — nearest provider for each specialty · click any for cited evidence</div>
+    <div class="ct-grid">${roles}</div>`;
+}
 function renderCopilot(r){
+  if(r && r.mode==="care_team"){ return renderCareTeam(r); }
   const plan=r.plan||{};
   const chips=(plan.capabilities||[]).map(c=>`<span class="chip">${esc(c)}</span>`).join("")+(plan.location?` <span class="chip">📍 ${esc(plan.location)}</span>`:"");
   const trace=(r.trace||[]).map(s=>{

@@ -138,6 +138,17 @@ textarea{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 1
 .vb.flag{color:var(--partial);background:var(--partial-bg)}
 .vb.block{color:var(--weak);background:var(--weak-bg)}
 .cp-blocked{margin:6px 16px;padding:9px 12px;border:1px dashed #e6b3b0;border-radius:11px;background:#fdf7f7;font-size:13px}
+/* care team */
+.ct-escalate{margin:10px 16px;padding:10px 13px;background:var(--partial-bg);border:1px solid #f3d9a8;border-radius:10px;color:#7a5b08;font-weight:600;font-size:13.5px}
+.ct-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:4px 16px 16px}
+@media(max-width:760px){.ct-grid{grid-template-columns:1fr}}
+.ct-role{border:1px solid var(--line);border-radius:11px;padding:11px 13px}
+.ct-role-h{font-weight:700;font-size:13.5px;margin-bottom:7px}
+.ct-fac{padding:6px 8px;border-radius:8px;cursor:pointer;font-size:13px;margin-bottom:2px}
+.ct-fac:hover{background:#fbfdff}
+.ct-fac.near{background:var(--strong-bg)}
+.ct-fac .muted{font-size:12px;margin-top:1px}
+.ct-nearest{font-size:9.5px;font-weight:700;text-transform:uppercase;color:var(--strong);background:#fff;border:1px solid #bfe6d4;border-radius:999px;padding:1px 6px;margin-right:4px}
 .cp-demand{margin:8px 16px;padding:8px 12px;background:var(--blue-soft);border-radius:9px;font-size:12.5px;color:#33415c}
 
 /* Track 2 — gap map + desert map */

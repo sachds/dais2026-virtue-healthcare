@@ -30,15 +30,25 @@ def plan(query: str) -> dict:
     sys = ("You convert a healthcare planner's free-text request into structured search parameters. "
            "Capabilities are ONLY: icu, maternity, emergency, oncology, trauma, nicu. Map synonyms "
            "(cancer->oncology, delivery/childbirth->maternity, newborn/neonatal->nicu, accident/injury->trauma, "
-           "critical/intensive care->icu, casualty->emergency). Extract the location as written.")
-    usr = (f'Request: "{query}"\nReturn STRICT JSON: '
-           '{"capabilities": ["..."], "location": "..."} (capabilities from the allowed list only; location "" if none).')
+           "critical/intensive care->icu, casualty->emergency). Also detect a chronic CONDITION the patient HAS "
+           "(diabetes, hypertension, pregnancy) and the number of visits this month if stated. Extract the location.")
+    usr = (f'Request: "{query}"\nReturn STRICT JSON: {{"capabilities": ["..."], "location": "...", '
+           '"condition": "diabetes|hypertension|pregnancy|none", "visits": 0}} (capabilities from the allowed list; '
+           'condition ONLY if the patient has one, else "none"; visits = integer visits this month if mentioned, else 0).')
     try:
         p = llm.chat_json([{"role": "system", "content": sys}, {"role": "user", "content": usr}], 300)
     except Exception:
         p = {}
     caps = [c for c in (p.get("capabilities") or []) if c in CAPS]
-    return {"capabilities": caps, "location": (p.get("location") or "").strip()}
+    cond = (p.get("condition") or "none").strip().lower()
+    if cond not in db.CARE_TEAMS:
+        cond = "none"
+    try:
+        visits = int(p.get("visits") or 0)
+    except (TypeError, ValueError):
+        visits = 0
+    return {"capabilities": caps, "location": (p.get("location") or "").strip(),
+            "condition": cond, "visits": visits}
 
 
 def scrutinize(candidates: list[dict]) -> None:
@@ -104,10 +114,52 @@ def compose(query: str, caps: list[str], passed: list[dict]) -> dict:
         return {"answer": "Ranked by strongest surviving evidence (live synthesis unavailable).", "why": {}}
 
 
+def _compose_care_team(query: str, cond: str, location: str, ct: dict, escalation: str | None) -> str:
+    roles = [{"role": r["role"], "nearest": (r["facilities"][0]["name"] if r["facilities"] else None),
+              "km": (r["facilities"][0].get("km") if r["facilities"] else None)} for r in ct.get("roles", [])]
+    sys = ("You are a referral copilot assembling a CARE TEAM for a patient with a chronic condition. In 2-3 sentences "
+           "explain why this condition needs this multi-specialty team (e.g. a diabetic needs an annual eye exam for "
+           "retinopathy and dental care for periodontal disease), naming the nearest provider for each. If an escalation "
+           "note is given, state it plainly. Use ONLY the providers given; invent none.")
+    usr = (f'Request: "{query}" · condition: {cond} · near {location or "—"}\nCare team (nearest providers):\n'
+           f'{json.dumps(roles, ensure_ascii=False)}\n' + (f"Escalation: {escalation}\n" if escalation else "")
+           + "Return a short plain-text recommendation (no JSON, no markdown).")
+    try:
+        return llm.chat([{"role": "system", "content": sys}, {"role": "user", "content": usr}], 500)
+    except Exception:
+        parts = [f"{r['role']} → {r['nearest']}" for r in roles if r["nearest"]]
+        return (f"Care team for {cond}{' near ' + location if location else ''}: " + "; ".join(parts)
+                + (". " + escalation if escalation else "."))
+
+
+def care_team_referral(query: str, p: dict) -> dict:
+    cond, loc, visits = p["condition"], p["location"], p.get("visits", 0)
+    trace = [{"step": "plan", "role": "Planner", "model": MODEL,
+              "detail": f"chronic condition: {cond}" + (f" · near {loc}" if loc else "")
+                        + (f" · {visits} visits this month" if visits else "")}]
+    ct = db.care_team(cond, loc)
+    roles = ct.get("roles", [])
+    trace.append({"step": "team", "role": "Care-team", "tool": "care_team",
+                  "detail": f"assembled a {cond} care team across {len(roles)} specialties"
+                            + (" — nearest by distance" if ct.get("has_centroid") else "")})
+    escalation = None
+    if visits and visits >= 2:
+        escalation = (f"{visits} visits this month — escalate from primary care to a specialist and a hospital "
+                      "(don't keep managing this in an outpatient clinic).")
+        trace.append({"step": "escalate", "role": "Escalation", "tool": "rule",
+                      "detail": f"{visits} visits this month ≥ 2 → escalate to specialist + hospital"})
+    answer = _compose_care_team(query, cond, loc, ct, escalation)
+    trace.append({"step": "compose", "role": "Composer", "model": MODEL, "detail": "drafted the care-team referral"})
+    return {"mode": "care_team", "plan": p, "trace": trace, "care_team": roles,
+            "escalation": escalation, "answer": answer}
+
+
 def run(query: str) -> dict:
     trace: list[dict] = []
 
     p = plan(query)
+    if p.get("condition", "none") != "none":          # chronic condition → care-team referral
+        return care_team_referral(query, p)
     caps = p["capabilities"] or CAPS
     where = f" near {p['location']}" if p["location"] else ""
     trace.append({"step": "plan", "role": "Planner", "model": MODEL,

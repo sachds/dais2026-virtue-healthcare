@@ -173,6 +173,73 @@ def shortlist(name: str = "default") -> list[dict]:
         return cur.fetchall()
 
 
+# Chronic condition → the care team it needs (a diabetic needs eye + dental exams, etc.).
+# Each role matches facilities whose `specialties` contain any of the keywords.
+CARE_TEAMS: dict[str, list[tuple[str, list[str]]]] = {
+    "diabetes": [
+        ("Diabetes / endocrinology care", ["endocrin", "diabet"]),
+        ("Dental exam (periodontal disease)", ["dentist", "dental", "odont"]),
+        ("Eye exam (diabetic retinopathy)", ["ophthalmolog"]),
+        ("Kidney check (nephrology)", ["nephrolog"]),
+    ],
+    "hypertension": [
+        ("Cardiology / internal medicine", ["cardiolog", "internalmedicine"]),
+        ("Eye exam", ["ophthalmolog"]),
+        ("Kidney check (nephrology)", ["nephrolog"]),
+    ],
+    "pregnancy": [
+        ("Obstetrics / maternity", ["obstetr", "gynec"]),
+        ("Newborn / pediatrics", ["pediatr", "neonat"]),
+    ],
+}
+
+
+def _location_centroid(location: str) -> tuple[float | None, float | None]:
+    loc = (location or "").strip()
+    if not loc:
+        return (None, None)
+    with _conn() as c, c.cursor() as cur:
+        cur.execute("SELECT avg(latitude) la, avg(longitude) lo FROM facilities "
+                    "WHERE (city ILIKE %s OR state ILIKE %s) AND latitude IS NOT NULL",
+                    (f"%{loc}%", f"%{loc}%"))
+        r = cur.fetchone()
+    if r and r["la"] is not None:
+        return (float(r["la"]), float(r["lo"]))
+    return (None, None)
+
+
+def care_team(condition: str, location: str = "", per: int = 3) -> dict:
+    """For a chronic condition, assemble the care team it needs — the NEAREST facilities
+    (by lat/long from the patient's location) for each required specialty."""
+    cond = (condition or "").strip().lower()
+    spec = CARE_TEAMS.get(cond)
+    if not spec:
+        return {"available": False}
+    clat, clon = _location_centroid(location)
+    roles = []
+    with _conn() as c, c.cursor() as cur:
+        for label, keys in spec:
+            where = " OR ".join(["f.specialties ILIKE %s"] * len(keys))
+            ilike = [f"%{k}%" for k in keys]
+            if clat is not None:
+                cur.execute(
+                    f"""SELECT f.id, f.name, f.city, f.state, f.facility_type,
+                           ((f.latitude-%s)*(f.latitude-%s)+(f.longitude-%s)*(f.longitude-%s)) AS d2
+                       FROM facilities f WHERE ({where}) AND f.latitude IS NOT NULL
+                       ORDER BY d2 ASC LIMIT %s""",
+                    [clat, clat, clon, clon] + ilike + [per])
+            else:
+                cur.execute(f"SELECT f.id, f.name, f.city, f.state, f.facility_type, NULL AS d2 "
+                            f"FROM facilities f WHERE ({where}) LIMIT %s", ilike + [per])
+            facs = cur.fetchall()
+            for x in facs:
+                x["km"] = round((x["d2"] ** 0.5) * 111, 1) if x.get("d2") is not None else None
+                x.pop("d2", None)
+            roles.append({"role": label, "facilities": facs})
+    return {"available": True, "condition": cond, "location": location,
+            "has_centroid": clat is not None, "roles": roles}
+
+
 def copilot_candidates(caps: list[str], location: str = "", limit: int = 8) -> list[dict]:
     """The Copilot's retrieval tool: facilities in `location` that have supporting
     evidence for the requested capabilities, ranked by best trust signal."""
