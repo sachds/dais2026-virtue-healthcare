@@ -681,6 +681,7 @@ window.openNetwork = openNetwork;
 async function runNetwork(){
   const cap=$("nw-cap").value, state=$("nw-state").value;
   if(!state){ $("nw-body").innerHTML=`<div class="empty">No state selected.</div>`; return; }
+  setFocus({region:state, capability:cap});   // the Focus bar reflects the network you're viewing
   showLoading("nw-body", ["Coordinating a Copilot instance per facility","Routing each to its nearest trusted "+cap.toUpperCase(),"Aggregating the load — finding the chokepoints","Cross‑checking the top chokepoint's evidence","Writing the systemic‑risk finding"], "Care‑Network fleet");
   try{
     const r=await (await fetch("/api/network",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({capability:cap,state})})).json();
