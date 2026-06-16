@@ -78,10 +78,20 @@ CREATE TABLE IF NOT EXISTS facility_services (
     n_sources         INTEGER,      -- corroborating source URLs (cardinality)
     services          JSONB,        -- {category: {specialties, procedures, beds, offered}}
     cap_specialists   JSONB,        -- {capability: n_relevant_specialists} — the trust cross-check
+    district          TEXT,         -- from the PIN bridge (load_pincode.py)
     missing_beds      BOOLEAN,      -- inpatient facility with no stated bed count
     missing_specialty BOOLEAN       -- a provider with no specialty attached
 );
-CREATE INDEX IF NOT EXISTS ix_fs_state ON facility_services (state);
+CREATE INDEX IF NOT EXISTS ix_fs_state    ON facility_services (state);
+CREATE INDEX IF NOT EXISTS ix_fs_district ON facility_services (district);
+
+-- India Post PIN → district → state (load_pincode.py). The geography bridge: facilities
+-- carry a PIN but no district; NFHS-5 and the referral 'local provider' live at district grain.
+CREATE TABLE IF NOT EXISTS pincode (
+    pincode  TEXT PRIMARY KEY,
+    district TEXT,
+    state    TEXT
+);
 
 -- Append-only user actions ("persist user actions"): overrides, notes, shortlists, decisions.
 CREATE TABLE IF NOT EXISTS reviews (

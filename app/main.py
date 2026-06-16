@@ -52,6 +52,11 @@ async def services():
     return JSONResponse(await asyncio.to_thread(db.services_overview))
 
 
+@app.get("/api/districts")
+async def districts():
+    return JSONResponse(await asyncio.to_thread(db.district_rollup))
+
+
 @app.get("/api/states")
 async def states():
     return JSONResponse({"states": await asyncio.to_thread(db.states)})

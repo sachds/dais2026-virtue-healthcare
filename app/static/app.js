@@ -93,11 +93,35 @@ window.drill = drill;
 // ---- Track 4: Data Readiness Desk ---------------------------------------- //
 async function showReadiness(){
   $("readiness-body").innerHTML = `<div class="empty">Profiling the dataset…</div>`;
-  const [r, s] = await Promise.all([
+  const [r, s, dist] = await Promise.all([
     fetch("/api/readiness").then(x=>x.json()),
     fetch("/api/services").then(x=>x.json()),
+    fetch("/api/districts").then(x=>x.json()),
   ]);
-  renderReadiness(r, s);
+  renderReadiness(r, s, dist);
+}
+// supply mapped to district (PIN bridge)
+function districtSection(d){
+  if(!d || !d.available) return "";
+  const num = (x)=> x ? x.toLocaleString() : '<span class="muted">—</span>';
+  const rows = (d.districts||[]).map(x=>`<tr>
+    <td class="svc-cat">${esc(x.district)} <span class="muted" style="font-weight:400">${esc(x.state||'')}</span></td>
+    <td>${num(x.facilities)}</td>
+    <td>${num(x.beds)}</td>
+    <td>${num(x.physicians)}</td>
+    <td>${x.missing_beds ? `<span style="color:var(--weak)">${x.missing_beds}</span>` : '0'}</td>
+  </tr>`).join("");
+  return `
+    <section class="panel">
+      <h2>Geographic distribution — facilities &amp; capacity by district</h2>
+      <div class="body">
+        <p class="muted" style="margin:0 0 11px"><b>${d.mapped.toLocaleString()}</b> facilities mapped to <b>${d.n_districts}</b> districts via the India Post PIN bridge. Top districts by facility count:</p>
+        <table class="svc-table dist">
+          <thead><tr><th>District</th><th>Facilities</th><th>Beds</th><th>Physicians</th><th>No bed count</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </section>`;
 }
 // classification + capacity + completeness (facility_services)
 function servicesSection(s){
@@ -129,7 +153,7 @@ function servicesSection(s){
       </div>
     </section>`;
 }
-function renderReadiness(r, s){
+function renderReadiness(r, s, dist){
   const totalFac = OV.facilities || r.total || 0;
   const scored = OV.scored || 0;
   const d = r.signal_dist || {strong:0,partial:0,weak:0,none:0};
@@ -174,6 +198,7 @@ function renderReadiness(r, s){
   $("readiness-body").innerHTML = `
     <div class="stat-cards">${cards}</div>
     ${servicesSection(s)}
+    ${districtSection(dist)}
     <div class="rd-grid">
       <section class="panel">
         <h2>Field coverage — how complete the source records are</h2>

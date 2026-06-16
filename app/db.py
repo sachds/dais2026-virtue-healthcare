@@ -475,6 +475,40 @@ def services_overview() -> dict:
             "missing_beds": a["missing_beds"], "missing_specialty": a["missing_specialty"]}
 
 
+def district_rollup(limit: int = 16) -> dict:
+    """Supply mapped to district via the PIN bridge: facilities, beds, physicians, and
+    the bed-count completeness gap per district. The geography the referral 'local
+    provider' and district-level planning both build on."""
+    with _conn() as c, c.cursor() as cur:
+        try:
+            cur.execute("SELECT count(*) FILTER (WHERE district IS NOT NULL) m, "
+                        "count(DISTINCT district) d FROM facility_services")
+        except Exception:  # noqa: BLE001 — table/column not present yet
+            return {"available": False}
+        r = cur.fetchone()
+        if not r["m"]:
+            return {"available": False}
+        # clean district→state from the PIN directory (the facility's own state field
+        # is dirty); modal state per district.
+        cur.execute(
+            """WITH ds AS (
+                 SELECT district, state FROM (
+                   SELECT district, state,
+                          row_number() OVER (PARTITION BY district ORDER BY count(*) DESC) rn
+                   FROM pincode WHERE district IS NOT NULL GROUP BY district, state) z
+                 WHERE rn=1)
+               SELECT fs.district, ds.state, count(*) AS facilities,
+                      count(*) FILTER (WHERE fs.total_beds>0) AS with_beds,
+                      coalesce(sum(fs.total_beds),0) AS beds,
+                      coalesce(sum(fs.n_doctors),0) AS physicians,
+                      count(*) FILTER (WHERE fs.missing_beds) AS missing_beds
+               FROM facility_services fs LEFT JOIN ds ON ds.district = fs.district
+               WHERE fs.district IS NOT NULL
+               GROUP BY fs.district, ds.state ORDER BY facilities DESC LIMIT %s""", (limit,))
+        districts = cur.fetchall()
+    return {"available": True, "mapped": r["m"], "n_districts": r["d"], "districts": districts}
+
+
 def health() -> dict:
     try:
         with _conn() as c, c.cursor() as cur:

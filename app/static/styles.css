@@ -196,6 +196,7 @@ td.st .muted{font-weight:400;font-size:11px}
 .svc-table td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
 .svc-table tr:last-child td{border-bottom:0}
 .svc-table th:nth-child(3),.svc-table th:nth-child(4),.svc-table td:nth-child(3),.svc-table td:nth-child(4){text-align:right;color:#33415c}
+.svc-table.dist th:nth-child(n+2),.svc-table.dist td:nth-child(n+2){text-align:right;color:#33415c}
 .svc-cat{font-weight:650}
 .svc-off{display:flex;align-items:center;gap:8px}
 .svc-bar{flex:1;max-width:200px;height:8px;background:#eef2f7;border-radius:5px;overflow:hidden}
