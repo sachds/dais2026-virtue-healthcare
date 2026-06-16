@@ -3,6 +3,7 @@ const $ = (id) => document.getElementById(id);
 const CAPS = ["icu", "maternity", "emergency", "oncology", "trauma", "nicu"];
 const SIGNAL_LABEL = { strong: "Strong", partial: "Partial", weak: "Weak", none: "No claim" };
 let SELECTED = null;
+let _curFacName = "";   // name of the facility open in the Trust Desk (for the "refer from here" handoff)
 let OV = {};            // cached /api/overview (facility + scored counts)
 
 function esc(s){return (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
@@ -194,9 +195,10 @@ function renderDesert(g){
     if(x.institutional_birth!=null) ctx.push(`${x.institutional_birth}% births in-facility`);
     if(x.insurance!=null) ctx.push(`${x.insurance}% insured`);
     const burden = ctx.length ? ` <span class="muted">· burden ${ctx.join(' · ')}</span>` : '';
-    return `<div class="gaprow" onclick="drill('${esc(x.state).replace(/'/g,'')}','${x.capability}')">
+    return `<div class="gaprow" onclick="openNetwork('${x.capability}','${esc(x.state).replace(/'/g,'')}')">
        ${rb} <b style="text-transform:capitalize">${esc(x.capability)}</b> in ${esc(x.state)}
-       <span class="muted"> — ${x.trusted} of ${x.n_scored} evaluated trusted (${pct(x.trusted_rate)})</span>${burden}</div>`;
+       <span class="muted"> — ${x.trusted} of ${x.n_scored} evaluated trusted (${pct(x.trusted_rate)})</span>${burden}
+       <span class="gaprow-go">⇄ examine the network →</span></div>`;
   }).join("");
   $("desert-view").innerHTML = `
     <p class="legend">
@@ -206,7 +208,7 @@ function renderDesert(g){
       <span class="muted">· <b>need</b> = NFHS-5 health burden (${g.demand_states} states matched)</span>
     </p>
     <div class="heatwrap"><table class="heat"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>
-    <div class="evidence-lbl" style="margin:16px 16px 6px">Highest-risk shortfalls — health burden × thin trusted supply · click to see the facilities</div>
+    <div class="evidence-lbl" style="margin:16px 16px 6px">Highest-risk shortfalls — health burden × thin trusted supply · <b>click to examine the region's care network →</b></div>
     ${risks || '<div class="muted" style="padding:0 16px 14px">No demand-ranked shortfalls yet — more facilities need scoring.</div>'}`;
 }
 function drill(state, cap){
@@ -378,11 +380,12 @@ async function selectFacility(id){
   SELECTED = id;
   activate("trust");
   if(!$("list").querySelector(".fac")) loadFacilities();
-  document.querySelectorAll(".fac").forEach(e=>e.classList.toggle("sel", e.getAttribute("onclick").includes(id)));
+  document.querySelectorAll(".fac").forEach(e=>e.classList.toggle("sel", (e.getAttribute("onclick")||"").includes(id)));
   $("fac-detail").innerHTML = `<div class="empty">Loading facility…</div>`;
   const d = await (await fetch("/api/facility/"+encodeURIComponent(id))).json();
   if(!d.facility){ $("fac-detail").innerHTML = `<div class="empty">Facility not found.</div>`; return; }
   const f = d.facility;
+  _curFacName = f.name || "";
   $("detail-title").textContent = f.name || "Facility";
   const srcs = parseArr(f.source_urls).filter(Boolean).slice(0,3);
   const links = srcs.map(u=>`<a class="chip" href="${esc(u)}" target="_blank" rel="noopener">source ↗</a>`).join("");
@@ -401,6 +404,11 @@ async function selectFacility(id){
     <div class="actions" style="border-top:0;padding-top:0">
       <button class="btn" onclick="addNote('${esc(id)}')">Save note</button>
       <button class="btn ghost" onclick="shortlistFac(event,'${esc(id)}')">★ Add to shortlist</button>
+    </div>
+    <div class="xscale">
+      <span class="xscale-lbl">Take this further →</span>
+      <button class="xbtn pat" onclick="referFrom()">✦ Refer a patient from here</button>
+      <button class="xbtn net" onclick="openNetwork($('capability').value||'icu','${esc((f.state||'').replace(/'/g,''))}')">⇄ See its care network</button>
     </div>
     ${historyBlock(d.history)}`;
 }
@@ -472,6 +480,9 @@ async function loadShortlist(){
 }
 async function removeShortlist(fid){ await review({action:"unshortlist",facility_id:fid,shortlist:"default"}); loadShortlist(); }
 window.removeShortlist=removeShortlist;
+// cross-scale handoff: Facility (Trust Desk) → Patient (Referral Copilot) — refer FROM the open facility
+function referFrom(){ if(!_curFacName) return; activate('copilot'); $('cp-from').value=_curFacName; $('cp-q').value=''; window.scrollTo(0,0); $('cp-q').focus(); }
+window.referFrom=referFrom;
 
 // ---- Track 3: Referral Copilot (governed multi-agent mesh) ---------------- //
 async function runCopilot(){
@@ -608,6 +619,20 @@ async function loadNetworkStates(autorun){
     : `<option value="">no funnel data</option>`;
   if(autorun && states.length){ sel.value=states[0].state; runNetwork(); }
 }
+// cross-scale handoff: Population (Gap map) → Network (Care Network) for a specific state+capability
+async function openNetwork(cap, state){
+  activate('network'); _nwLoaded = true;            // suppress the auto-run-worst
+  $('nw-cap').onchange = ()=>loadNetworkStates(true);
+  $('nw-cap').value = CAPS.includes(cap) ? cap : 'icu';
+  await loadNetworkStates(false);                    // populate the dropdown, don't auto-run
+  if(state){
+    const sel = $('nw-state');
+    if(![...sel.options].some(o=>o.value===state)){ const o=document.createElement('option'); o.value=state; o.textContent=state; sel.insertBefore(o, sel.firstChild); }
+    sel.value = state;
+  }
+  window.scrollTo(0,0); runNetwork();
+}
+window.openNetwork = openNetwork;
 async function runNetwork(){
   const cap=$("nw-cap").value, state=$("nw-state").value;
   if(!state){ $("nw-body").innerHTML=`<div class="empty">No state selected.</div>`; return; }
@@ -636,6 +661,7 @@ function renderNetwork(r){
           <span class="muted">${esc(b.city||'')}${b.avg_km!=null?' · avg '+b.avg_km+' km':''}</span>
           ${nwTrustBadge(b.trust)}<span class="nw-share">${b.share}%</span></div>
         ${b.why?`<div class="nw-why">⚠ ${esc(b.why)}</div>`:''}
+        <div class="nw-xcheck">🏥 trust‑check this destination →</div>
       </div></div>`).join("");
   $("nw-body").innerHTML = head +
     `<div class="evidence-lbl" style="margin:12px 16px 4px">How the fleet worked — coordinate → fan‑out → aggregate → skeptic → synthesize</div>
@@ -647,7 +673,7 @@ function renderNetwork(r){
        <span class="dot2" style="background:#d97706"></span> partial evidence
        <span class="dot2" style="background:#fff;border:2px solid #dc2626"></span> single‑point‑of‑failure
        <span class="muted">· bubble = referral load · grey = referring facility · click a chokepoint for its evidence</span></p>
-     <div class="evidence-lbl" style="margin:14px 16px 4px">Chokepoints — the destinations the region depends on · click any for its cited evidence</div>
+     <div class="evidence-lbl" style="margin:14px 16px 4px">Chokepoints — the destinations the region depends on · <b>click any to trust‑check it →</b></div>
      ${bn}
      <div class="nw-act">
        <span class="nw-act-lbl">Act on this →</span>
