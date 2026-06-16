@@ -62,6 +62,18 @@ _WARD_RULES: list[tuple[tuple[str, ...], str]] = [
       "medical", "general ward", "emergency", "casualty", "isolation", "ward"), "medical"),
 ]
 
+# The six Trust-Desk capabilities → specialty keywords that corroborate them. Used
+# for the cardinality cross-check: a capability claim is only as trustworthy as the
+# number of relevant specialists on record (0 oncologists ⇒ "strong oncology" is hollow).
+CAPABILITY_SPECIALTIES: dict[str, tuple[str, ...]] = {
+    "icu": ("criticalcare", "intensiv", "anesthe", "anaesthe", "pulmonolog"),
+    "maternity": ("obstetr", "gynec", "gynaec", "maternalfetal", "midwif"),
+    "emergency": ("emergencymedicine", "criticalcare", "traumasurg"),
+    "oncology": ("oncolog", "hematolog", "haematolog", "radiationoncolog"),
+    "trauma": ("trauma", "orthopedic", "orthopaedic", "neurosurg", "generalsurg", "emergencymedicine"),
+    "nicu": ("neonat", "perinat", "pediatr", "paediatr"),
+}
+
 _norm = lambda s: re.sub(r"[^a-z]", "", (s or "").lower())  # noqa: E731
 
 
@@ -83,6 +95,15 @@ def classify_procedure(text: str) -> str:
         if any(k in t for k in keys):
             return cat
     return "other"
+
+
+def count_capability_specialists(specialties: list[str]) -> dict[str, int]:
+    """Per Trust-Desk capability, how many of the facility's specialties corroborate it
+    — the cardinality cross-check. Dental specialties are excluded so a pediatric-dentist
+    doesn't count toward NICU."""
+    norm = [_norm(s) for s in specialties if _norm(s) and classify_specialty(s) != "dental"]
+    return {cap: sum(1 for n in norm if any(k in n for k in keys))
+            for cap, keys in CAPABILITY_SPECIALTIES.items()}
 
 
 def _ward_category(label: str) -> str:

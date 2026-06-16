@@ -78,6 +78,17 @@ main{padding:18px 22px}
 .conf-bar i{display:block;height:100%;background:var(--blue)}
 .cap .inner{padding:12px 14px}
 .rationale{color:#33415c;margin-bottom:9px}
+/* cardinality cross-check on a capability card */
+.cardinality{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:7px 11px;border-radius:9px;margin-bottom:10px;font-size:12.5px;background:#f7f9fc;border:1px solid var(--line)}
+.cardinality.flag{background:var(--weak-bg);border-color:#f3c9c6}
+.card-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700}
+.card-lvl{font-size:10px;font-weight:700;text-transform:uppercase;padding:1px 7px;border-radius:999px}
+.card-lvl.high{color:var(--strong);background:var(--strong-bg)}
+.card-lvl.medium{color:var(--partial);background:var(--partial-bg)}
+.card-lvl.low{color:var(--muted);background:var(--none-bg)}
+.card-stat{color:#33415c}
+.card-stat b{color:var(--ink)}
+.card-warn{color:var(--weak);font-weight:600;width:100%;margin-top:2px}
 .evidence-lbl{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:5px}
 .ev{border-left:3px solid #d7e0ee;padding:5px 0 5px 11px;margin-bottom:7px}
 .ev .field{font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--blue);font-weight:700}

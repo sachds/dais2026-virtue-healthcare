@@ -75,7 +75,9 @@ CREATE TABLE IF NOT EXISTS facility_services (
     total_beds        INTEGER,
     n_doctors         INTEGER,
     n_categories      INTEGER,
+    n_sources         INTEGER,      -- corroborating source URLs (cardinality)
     services          JSONB,        -- {category: {specialties, procedures, beds, offered}}
+    cap_specialists   JSONB,        -- {capability: n_relevant_specialists} — the trust cross-check
     missing_beds      BOOLEAN,      -- inpatient facility with no stated bed count
     missing_specialty BOOLEAN       -- a provider with no specialty attached
 );

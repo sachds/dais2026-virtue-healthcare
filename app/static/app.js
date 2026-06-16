@@ -252,6 +252,20 @@ async function selectFacility(id){
     </div>`;
 }
 
+function cardinalityStrip(c){
+  const k = c.cardinality; if(!k) return "";
+  const eff = c.override||c.signal;
+  const lowflag = (eff==='strong'||eff==='partial') && k.specialists===0;
+  return `<div class="cardinality ${lowflag?'flag':''}">
+    <span class="card-lbl">Corroboration</span>
+    <span class="card-lvl ${k.level}">${k.level}</span>
+    <span class="card-stat"><b>${k.specialists}</b> ${esc(c.capability)} specialist${k.specialists===1?'':'s'}</span>
+    <span class="card-stat"><b>${k.doctors!=null?k.doctors:'—'}</b> physicians</span>
+    <span class="card-stat"><b>${k.sources||0}</b> sources</span>
+    ${k.beds?`<span class="card-stat"><b>${k.beds}</b> beds</span>`:''}
+    ${lowflag?`<span class="card-warn">⚠ no ${esc(c.capability)} specialists on record — claim not corroborated</span>`:''}
+  </div>`;
+}
 function capCard(fid,c){
   const ovr = c.override && c.override!==c.signal;
   const ev = (c.evidence||[]);
@@ -269,6 +283,7 @@ function capCard(fid,c){
     </div>
     <div class="inner">
       ${c.rationale?`<div class="rationale">${esc(c.rationale)}</div>`:""}
+      ${cardinalityStrip(c)}
       <div class="evidence-lbl">Cited evidence</div>
       ${evHtml}
       <div class="override"><span class="lbl">Analyst override:</span>${ovBtns}</div>

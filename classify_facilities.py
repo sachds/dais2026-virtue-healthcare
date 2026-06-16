@@ -22,7 +22,7 @@ from app import taxonomy as tax  # noqa: E402
 
 SRC = "databricks_virtue_foundation_dataset_dais_2026.virtue_foundation_dataset.facilities"
 SEL = ("unique_id, facilityTypeId, address_city, address_stateOrRegion, address_zipOrPostcode, "
-       "specialties, procedure, capability, description, capacity, numberDoctors")
+       "specialties, procedure, capability, description, capacity, numberDoctors, source_urls")
 # bed counts are only meaningful for inpatient facility types
 INPATIENT = {"hospital", "medicalcollege", "nursinghome", "medicalcenter"}
 
@@ -36,7 +36,9 @@ CREATE TABLE IF NOT EXISTS facility_services (
     total_beds        INTEGER,
     n_doctors         INTEGER,
     n_categories      INTEGER,
+    n_sources         INTEGER,      -- corroborating source URLs (cardinality)
     services          JSONB,        -- {category: {specialties, procedures, beds, offered}}
+    cap_specialists   JSONB,        -- {capability: n_relevant_specialists} (the cross-check)
     missing_beds      BOOLEAN,      -- inpatient facility with no stated bed count
     missing_specialty BOOLEAN       -- a provider with no specialty attached
 )"""
@@ -89,24 +91,29 @@ def main() -> None:
         for c in tax.CATEGORIES:
             svc[c]["offered"] = svc[c]["specialties"] > 0 or svc[c]["procedures"] > 0
         n_cat = sum(1 for c in tax.CATEGORIES if svc[c]["offered"])
+        cap_spec = tax.count_capability_specialists(specs)
+        n_sources = len(parse_arr(d["source_urls"]))
         total_beds, n_doctors = to_int(d["capacity"]), to_int(d["numberDoctors"])
         ftype = (d["facilityTypeId"] or "").lower()
         clean = lambda v: v.replace("\x00", "") if isinstance(v, str) else v  # noqa: E731
         out.append((
             d["unique_id"], d["facilityTypeId"] or "", clean(d["address_city"]),
             clean(d["address_stateOrRegion"]), clean(d["address_zipOrPostcode"]),
-            total_beds, n_doctors, n_cat, Json(svc),
+            total_beds, n_doctors, n_cat, n_sources, Json(svc), Json(cap_spec),
             ftype in INPATIENT and not total_beds, len(specs) == 0))
 
     url = os.environ["LAKEBASE_URL"].replace("postgresql+psycopg://", "postgresql://")
     cols2 = ["facility_id", "facility_type", "city", "state", "postcode", "total_beds",
-             "n_doctors", "n_categories", "services", "missing_beds", "missing_specialty"]
+             "n_doctors", "n_categories", "n_sources", "services", "cap_specialists",
+             "missing_beds", "missing_specialty"]
     ph = ",".join(["%s"] * len(cols2))
     upd = ",".join(f"{c}=EXCLUDED.{c}" for c in cols2 if c != "facility_id")
     ins = (f"INSERT INTO facility_services ({','.join(cols2)}) VALUES ({ph}) "
            f"ON CONFLICT (facility_id) DO UPDATE SET {upd}")
     with psycopg.connect(url) as pg, pg.cursor() as pc:
         pc.execute(DDL)
+        pc.execute("ALTER TABLE facility_services ADD COLUMN IF NOT EXISTS n_sources INTEGER")
+        pc.execute("ALTER TABLE facility_services ADD COLUMN IF NOT EXISTS cap_specialists JSONB")
         for i in range(0, len(out), 500):
             pc.executemany(ins, out[i:i + 500])
             pg.commit()

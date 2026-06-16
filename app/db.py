@@ -120,11 +120,27 @@ def get_facility(fid: str) -> dict | None:
             "WHERE facility_id=%s AND action IN ('note','decision','override') ORDER BY created_at DESC LIMIT 50",
             (fid,))
         history = cur.fetchall()
+    # cardinality cross-check: how many relevant specialists / physicians / sources
+    # corroborate each claimed capability (separate connection so a missing table can't
+    # abort the main read).
+    fs = None
+    try:
+        with _conn() as c2, c2.cursor() as cur2:
+            cur2.execute("SELECT n_doctors, n_sources, total_beds, cap_specialists "
+                         "FROM facility_services WHERE facility_id=%s", (fid,))
+            fs = cur2.fetchone()
+    except Exception:  # noqa: BLE001 — table may not be loaded yet
+        fs = None
     caps = []
     for cap in CAPS:
         s = signals.get(cap, {"capability": cap, "signal": "none", "confidence": 0,
                               "evidence": [], "rationale": "", "model": None})
         s["override"] = overrides.get(cap)
+        if fs:
+            spec = (fs["cap_specialists"] or {}).get(cap, 0)
+            s["cardinality"] = {"specialists": spec, "doctors": fs["n_doctors"],
+                                "sources": fs["n_sources"], "beds": fs["total_beds"],
+                                "level": "high" if spec >= 3 else ("medium" if spec >= 1 else "low")}
         caps.append(s)
     return {"facility": fac, "capabilities": caps, "history": history}
 
