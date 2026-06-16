@@ -107,6 +107,16 @@ textarea{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 1
 .btn{background:var(--blue);color:#fff;border:0;border-radius:9px;padding:8px 15px;font-weight:650}
 .btn.ghost{background:#fff;color:var(--blue);border:1px solid var(--line)}
 .empty{color:var(--muted);text-align:center;padding:30px 12px}
+/* progressive agent loading indicator */
+.loading-steps{padding:26px 20px;max-width:440px;margin:0 auto}
+.ls-lead{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:14px}
+.ls-step{display:flex;align-items:center;gap:11px;padding:6px 0;color:var(--none);font-size:14px;transition:.2s}
+.ls-mark{width:16px;height:16px;border-radius:50%;border:2px solid var(--line);flex:0 0 16px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:#fff;box-sizing:border-box}
+.ls-step.done{color:#33415c}
+.ls-step.done .ls-mark{border-color:var(--strong);background:var(--strong)}
+.ls-step.active{color:var(--ink);font-weight:650}
+.ls-step.active .ls-mark{border-color:var(--blue);border-top-color:transparent;animation:lsspin .7s linear infinite}
+@keyframes lsspin{to{transform:rotate(360deg)}}
 
 /* Referral Copilot */
 .copilot{padding:14px 16px;background:linear-gradient(180deg,#eef5ff,#f6f8fb);border:1px solid #dbe6fb;border-radius:12px;margin-bottom:14px}

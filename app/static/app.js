@@ -10,6 +10,19 @@ function badge(sig){return `<span class="sig ${esc(sig)}">${SIGNAL_LABEL[sig]||s
 function parseArr(s){try{const a=JSON.parse(s);return Array.isArray(a)?a:[];}catch(e){return [];}}
 function pct(x){ return x==null ? '—' : Math.round(x*100)+'%'; }
 
+// progressive "the agent is working" indicator — walks the real pipeline steps while we wait.
+let _loadTimer=null;
+function showLoading(elId, steps, lead){
+  clearInterval(_loadTimer);
+  const el=$(elId); if(!el) return;
+  let i=0;
+  const render=()=>{ el.innerHTML = `<div class="loading-steps">${lead?`<div class="ls-lead">${esc(lead)}</div>`:""}${
+    steps.map((s,j)=>`<div class="ls-step ${j<i?'done':(j===i?'active':'')}"><span class="ls-mark">${j<i?'✓':''}</span>${esc(s)}</div>`).join("")}</div>`; };
+  render();
+  _loadTimer=setInterval(()=>{ if(i<steps.length-1){ i++; render(); } else { clearInterval(_loadTimer); } }, 1500);
+}
+function stopLoading(){ clearInterval(_loadTimer); }
+
 // ---- view / pane switching ----------------------------------------------- //
 function activate(name){
   document.querySelectorAll(".pane").forEach(p=>p.classList.toggle("active", p.id==="pane-"+name));
@@ -379,11 +392,11 @@ async function shortlistFac(fid){await review({action:"shortlist",facility_id:fi
 async function runCopilot(){
   const q = $("cp-q").value.trim(); if(!q) return;
   activate("copilot");
-  $("copilot-body").innerHTML = `<div class="empty">Planning → searching Lakebase → scrutinizing → challenging → governing…</div>`;
+  showLoading("copilot-body", ["Planning the need","Retrieving from Lakebase","Scrutinizing the evidence","Governing the result","Composing the referral"], "Referral Copilot");
   try{
     const r = await (await fetch("/api/copilot",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({query:q})})).json();
-    renderCopilot(r);
-  }catch(e){ $("copilot-body").innerHTML = `<div class="empty">Copilot error: ${esc(e.message)}</div>`; }
+    stopLoading(); renderCopilot(r);
+  }catch(e){ stopLoading(); $("copilot-body").innerHTML = `<div class="empty">Copilot error: ${esc(e.message)}</div>`; }
 }
 function renderCareTeam(r){
   const p=r.plan||{};
@@ -504,12 +517,12 @@ function renderBurden(b){
 }
 async function runEscalate(district, condition){
   const el = $("ph-escalation"); if(!el) return;
-  el.innerHTML = `<section class="panel" style="margin-top:14px"><div class="body"><div class="empty">Coordinating a multi‑organization escalation for ${esc(district)}…</div></div></section>`;
+  showLoading("ph-escalation", ["Assessing "+district,"Coordinating the escalation (WHO / NGO / gov)"], "Escalation agent");
   el.scrollIntoView({behavior:"smooth", block:"center"});
   try{
     const r = await (await fetch("/api/publichealth/escalate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({district,condition})})).json();
-    renderEscalation(r);
-  }catch(e){ el.innerHTML = `<div class="empty">Escalation error: ${esc(e.message)}</div>`; }
+    stopLoading(); renderEscalation(r);
+  }catch(e){ stopLoading(); el.innerHTML = `<div class="empty">Escalation error: ${esc(e.message)}</div>`; }
 }
 window.runEscalate = runEscalate;
 function renderEscalation(r){
@@ -523,20 +536,20 @@ function renderEscalation(r){
 }
 async function runImmun(){
   const region = ($("ph-region").value||"").trim();
-  $("ph-body").innerHTML = `<div class="empty">Targeting under‑immunized districts → drafting the campaign…</div>`;
+  showLoading("ph-body", ["Ranking under‑immunized districts","Checking local supply to run it","Drafting the campaign"], "Immunization agent");
   try{
     const r = await (await fetch("/api/publichealth/immunization",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({region})})).json();
-    renderImmun(r);
-  }catch(e){ $("ph-body").innerHTML = `<div class="empty">Agent error: ${esc(e.message)}</div>`; }
+    stopLoading(); renderImmun(r);
+  }catch(e){ stopLoading(); $("ph-body").innerHTML = `<div class="empty">Agent error: ${esc(e.message)}</div>`; }
 }
 async function runOutbreak(){
   const region = ($("ph-oregion").value||"").trim(), disease = ($("ph-disease").value||"").trim();
   if(!region){ $("ph-body").innerHTML = `<div class="empty">Enter a district.</div>`; return; }
-  $("ph-body").innerHTML = `<div class="empty">Assessing local isolation capacity → drafting protocol…</div>`;
+  showLoading("ph-body", ["Assessing local isolation capacity","Designating isolation facilities","Drafting the containment protocol"], "Outbreak response agent");
   try{
     const r = await (await fetch("/api/publichealth/outbreak",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({region,disease})})).json();
-    renderOutbreak(r);
-  }catch(e){ $("ph-body").innerHTML = `<div class="empty">Agent error: ${esc(e.message)}</div>`; }
+    stopLoading(); renderOutbreak(r);
+  }catch(e){ stopLoading(); $("ph-body").innerHTML = `<div class="empty">Agent error: ${esc(e.message)}</div>`; }
 }
 window.runImmun = runImmun; window.runOutbreak = runOutbreak;
 function renderImmun(r){
