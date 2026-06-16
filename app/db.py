@@ -475,6 +475,49 @@ def services_overview() -> dict:
             "missing_beds": a["missing_beds"], "missing_specialty": a["missing_specialty"]}
 
 
+def district_supply(capability: str = "any") -> dict:
+    """District-level trusted supply with geographic centroids — for the desert MAP.
+    Each district: centroid (avg facility lat/long), facility count, and whether it has
+    trusted supply for the capability (served), is a gap (evaluated, none trusted), or
+    is data-poor. capability is one of CAPS or 'any' (trusted supply for any capability)."""
+    cap = capability if capability in CAPS else "any"
+    join_filter = "" if cap == "any" else "AND t.capability = %s"
+    args: list = [] if cap == "any" else [cap]
+    with _conn() as c, c.cursor() as cur:
+        try:
+            cur.execute(f"""
+              WITH ds AS (
+                SELECT district, state FROM (
+                  SELECT district, state,
+                         row_number() OVER (PARTITION BY district ORDER BY count(*) DESC) rn
+                  FROM pincode WHERE district IS NOT NULL GROUP BY district, state) z WHERE rn=1)
+              SELECT fs.district, ds.state,
+                     round(avg(f.latitude)::numeric, 4) lat, round(avg(f.longitude)::numeric, 4) lon,
+                     count(DISTINCT f.id) n_fac,
+                     count(DISTINCT t.facility_id) n_scored,
+                     count(DISTINCT t.facility_id) FILTER (WHERE t.signal IN ('strong','partial')) trusted
+              FROM facility_services fs
+              JOIN facilities f ON f.id = fs.facility_id AND f.latitude IS NOT NULL AND f.longitude IS NOT NULL
+              LEFT JOIN trust_signals t ON t.facility_id = fs.facility_id {join_filter}
+              LEFT JOIN ds ON ds.district = fs.district
+              WHERE fs.district IS NOT NULL
+              GROUP BY fs.district, ds.state
+              HAVING count(DISTINCT f.id) > 0""", args)
+            rows = cur.fetchall()
+        except Exception:  # noqa: BLE001 — pincode/facility_services not loaded
+            return {"available": False, "capability": cap, "caps": CAPS, "districts": []}
+    out = []
+    for r in rows:
+        if r["lat"] is None or r["lon"] is None:
+            continue
+        trusted, n_scored = r["trusted"], r["n_scored"]
+        status = "served" if trusted >= 1 else ("gap" if n_scored >= 3 else "datapoor")
+        out.append({"district": r["district"], "state": r["state"],
+                    "lat": float(r["lat"]), "lon": float(r["lon"]), "n_fac": r["n_fac"],
+                    "n_scored": n_scored, "trusted": trusted, "status": status})
+    return {"available": True, "capability": cap, "caps": CAPS, "districts": out}
+
+
 def district_rollup(limit: int = 16) -> dict:
     """Supply mapped to district via the PIN bridge: facilities, beds, physicians, and
     the bed-count completeness gap per district. The geography the referral 'local

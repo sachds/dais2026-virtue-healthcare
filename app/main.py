@@ -57,6 +57,11 @@ async def districts():
     return JSONResponse(await asyncio.to_thread(db.district_rollup))
 
 
+@app.get("/api/desertmap")
+async def desertmap(capability: str = "any"):
+    return JSONResponse(await asyncio.to_thread(db.district_supply, capability))
+
+
 @app.get("/api/states")
 async def states():
     return JSONResponse({"states": await asyncio.to_thread(db.states)})

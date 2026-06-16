@@ -33,10 +33,64 @@ async function init(){
 }
 
 // ---- Track 2: Medical Desert gap map ------------------------------------- //
+let DESERT_VIEW = "map", DESERT_CAP = "any";
 async function showDesert(){
-  $("desert-body").innerHTML = `<div class="empty">Loading the gap map…</div>`;
+  $("desert-body").innerHTML = `
+    <div class="desert-bar">
+      <div class="seg">
+        <button class="seg-btn ${DESERT_VIEW==='map'?'active':''}" onclick="setDesertView('map')">🗺 Map</button>
+        <button class="seg-btn ${DESERT_VIEW==='table'?'active':''}" onclick="setDesertView('table')">▦ Table</button>
+      </div>
+      <select id="desert-cap" style="display:${DESERT_VIEW==='map'?'':'none'}" onchange="DESERT_CAP=this.value;showDesertMap()">
+        <option value="any" ${DESERT_CAP==='any'?'selected':''}>Trusted supply: any capability</option>
+        ${CAPS.map(c=>`<option value="${c}" ${c===DESERT_CAP?'selected':''}>${c.toUpperCase()} deserts</option>`).join("")}
+      </select>
+    </div>
+    <div id="desert-view"><div class="empty">Loading…</div></div>`;
+  (DESERT_VIEW==='map' ? showDesertMap : showDesertTable)();
+}
+function setDesertView(v){ DESERT_VIEW = v; showDesert(); }
+window.setDesertView = setDesertView;
+async function showDesertTable(){
+  $("desert-view").innerHTML = `<div class="empty">Loading the gap map…</div>`;
   const g = await (await fetch("/api/desert")).json();
   renderDesert(g);
+}
+async function showDesertMap(){
+  $("desert-view").innerHTML = `<div class="empty">Plotting districts…</div>`;
+  const g = await (await fetch("/api/desertmap?capability="+encodeURIComponent(DESERT_CAP))).json();
+  renderDesertMap(g);
+}
+function districtDrill(district, cap){
+  activate("trust");
+  $("q").value = district; $("state").value = ""; $("capability").value = (cap && cap!=='any') ? cap : ""; $("signal").value = "";
+  updateHint(); loadFacilities(); window.scrollTo(0,0);
+}
+window.districtDrill = districtDrill;
+function renderDesertMap(g){
+  if(!g.available){ $("desert-view").innerHTML = `<div class="empty">District map needs the PIN bridge — run load_pincode.py.</div>`; return; }
+  const ds = (g.districts||[]).filter(d=>d.lat&&d.lon);
+  const W=540, H=600, LAT0=6, LAT1=37, LON0=68, LON1=98;
+  const X=lon=>(lon-LON0)/(LON1-LON0)*W, Y=lat=>(LAT1-lat)/(LAT1-LAT0)*H;
+  const col={served:'#34a877', gap:'#e0564f', datapoor:'#cbd5e1'};
+  const order={datapoor:0, served:1, gap:2};   // draw gaps/served on top of grey
+  ds.sort((a,b)=>order[a.status]-order[b.status]);
+  const counts={served:0, gap:0, datapoor:0}; ds.forEach(d=>counts[d.status]++);
+  const dots = ds.map(d=>{
+    const r = Math.max(2.5, Math.min(15, 2+Math.sqrt(d.n_fac)*1.1));
+    const detail = d.status==='served' ? `${d.trusted} trusted of ${d.n_fac} facilities`
+                  : (d.status==='gap' ? `GAP — 0 trusted of ${d.n_scored} evaluated` : `${d.n_fac} facilities · too few scored`);
+    return `<circle cx="${X(d.lon).toFixed(1)}" cy="${Y(d.lat).toFixed(1)}" r="${r.toFixed(1)}" fill="${col[d.status]}" fill-opacity="0.78" stroke="#fff" stroke-width="0.5" onclick="districtDrill('${esc(d.district).replace(/'/g,'')}','${esc(g.capability)}')"><title>${esc(d.district)}${d.state?', '+esc(d.state):''} — ${detail}</title></circle>`;
+  }).join("");
+  const capLbl = g.capability==='any' ? 'any capability' : g.capability.toUpperCase();
+  $("desert-view").innerHTML = `
+    <p class="legend">
+      <span class="dot2" style="background:${col.served}"></span> trusted supply (${counts.served})
+      <span class="dot2" style="background:${col.gap}"></span> confirmed gap (${counts.gap})
+      <span class="dot2" style="background:${col.datapoor}"></span> too few scored (${counts.datapoor})
+      <span class="muted">· ${ds.length} districts · bubble = # facilities · <b>${capLbl}</b> · click to drill in</span>
+    </p>
+    <div class="mapwrap"><svg viewBox="0 0 ${W} ${H}" class="desertmap" preserveAspectRatio="xMidYMid meet">${dots}</svg></div>`;
 }
 function cellLabel(c){ return c.status==='served' ? String(c.trusted) : (c.status==='gap' ? '0' : '·'); }
 function cellBg(c){
@@ -71,7 +125,7 @@ function renderDesert(g){
        ${rb} <b style="text-transform:capitalize">${esc(x.capability)}</b> in ${esc(x.state)}
        <span class="muted"> — ${x.trusted} of ${x.n_scored} evaluated trusted (${pct(x.trusted_rate)})</span>${burden}</div>`;
   }).join("");
-  $("desert-body").innerHTML = `
+  $("desert-view").innerHTML = `
     <p class="legend">
       <span class="cell served" style="background:hsl(157 47% 66%)">&nbsp;</span><span class="cell served" style="background:hsl(157 47% 40%)">&nbsp;</span> thin → robust trusted supply
       <span class="cell gap">&nbsp;</span> confirmed gap

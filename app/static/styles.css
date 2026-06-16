@@ -140,9 +140,20 @@ textarea{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 1
 .cp-blocked{margin:6px 16px;padding:9px 12px;border:1px dashed #e6b3b0;border-radius:11px;background:#fdf7f7;font-size:13px}
 .cp-demand{margin:8px 16px;padding:8px 12px;background:var(--blue-soft);border-radius:9px;font-size:12.5px;color:#33415c}
 
-/* Track 2 — gap map */
+/* Track 2 — gap map + desert map */
 .navbtn{background:#fff;border:1px solid var(--line);border-radius:9px;padding:6px 12px;color:var(--blue);font-weight:600}
 .navbtn:hover{border-color:#c9d6ea}
+.desert-bar{display:flex;align-items:center;gap:12px;padding:10px 14px 4px;flex-wrap:wrap}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.seg-btn{background:#fff;border:0;border-right:1px solid var(--line);padding:6px 14px;color:var(--muted);font-weight:600;font-size:13px}
+.seg-btn:last-child{border-right:0}
+.seg-btn.active{background:var(--blue-soft);color:var(--blue)}
+.desert-bar select{padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink);font:inherit}
+.dot2{display:inline-block;width:11px;height:11px;border-radius:50%;margin:0 2px -1px 6px}
+.mapwrap{padding:4px 14px 14px;display:flex;justify-content:center}
+.desertmap{width:100%;max-width:560px;height:auto;background:#f8fafc;border:1px solid var(--line);border-radius:12px}
+.desertmap circle{cursor:pointer;transition:.1s}
+.desertmap circle:hover{stroke:var(--blue);stroke-width:2}
 .legend{display:flex;gap:12px;align-items:center;color:var(--muted);font-size:12px;padding:12px 16px 2px;flex-wrap:wrap}
 .legend .cell{display:inline-block;width:18px;height:14px;margin:0 1px 0 0;border-radius:4px;line-height:14px}
 .heatwrap{overflow:auto;padding:8px 14px}
