@@ -47,24 +47,28 @@ async function init(){
 }
 
 // ---- Track 2: Medical Desert gap map ------------------------------------- //
-let DESERT_VIEW = "map", DESERT_CAP = "any";
+let DESERT_VIEW = "map", DESERT_CAPS = [];
 async function showDesert(){
+  const chips = DESERT_VIEW==='map' ? `<div class="cap-chips">
+      <span class="cap-chip-lbl">Deserts in:</span>
+      <button class="cap-chip ${DESERT_CAPS.length===0?'on':''}" onclick="setDesertCaps([])">any</button>
+      ${CAPS.map(c=>`<button class="cap-chip ${DESERT_CAPS.includes(c)?'on':''}" onclick="toggleDesertCap('${c}')">${c.toUpperCase()}</button>`).join("")}
+    </div>` : "";
   $("desert-body").innerHTML = `
     <div class="desert-bar">
       <div class="seg">
         <button class="seg-btn ${DESERT_VIEW==='map'?'active':''}" onclick="setDesertView('map')">🗺 Map</button>
         <button class="seg-btn ${DESERT_VIEW==='table'?'active':''}" onclick="setDesertView('table')">▦ Table</button>
       </div>
-      <select id="desert-cap" style="display:${DESERT_VIEW==='map'?'':'none'}" onchange="DESERT_CAP=this.value;showDesertMap()">
-        <option value="any" ${DESERT_CAP==='any'?'selected':''}>Trusted supply: any capability</option>
-        ${CAPS.map(c=>`<option value="${c}" ${c===DESERT_CAP?'selected':''}>${c.toUpperCase()} deserts</option>`).join("")}
-      </select>
+      ${chips}
     </div>
     <div id="desert-view"><div class="empty">Loading…</div></div>`;
   (DESERT_VIEW==='map' ? showDesertMap : showDesertTable)();
 }
 function setDesertView(v){ DESERT_VIEW = v; showDesert(); }
-window.setDesertView = setDesertView;
+function toggleDesertCap(c){ const i=DESERT_CAPS.indexOf(c); if(i>=0) DESERT_CAPS.splice(i,1); else DESERT_CAPS.push(c); showDesert(); }
+function setDesertCaps(arr){ DESERT_CAPS = arr.slice(); showDesert(); }
+window.setDesertView = setDesertView; window.toggleDesertCap = toggleDesertCap; window.setDesertCaps = setDesertCaps;
 async function showDesertTable(){
   $("desert-view").innerHTML = `<div class="empty">Loading the gap map…</div>`;
   const g = await (await fetch("/api/desert")).json();
@@ -72,8 +76,28 @@ async function showDesertTable(){
 }
 async function showDesertMap(){
   $("desert-view").innerHTML = `<div class="empty">Plotting districts…</div>`;
-  const g = await (await fetch("/api/desertmap?capability="+encodeURIComponent(DESERT_CAP))).json();
-  renderDesertMap(g);
+  if(DESERT_CAPS.length===0){
+    const g = await (await fetch("/api/desertmap?capability=any")).json();
+    g.capLabel = "any capability"; g.drillCap = "";
+    renderDesertMap(g); return;
+  }
+  // combine the selected capabilities: a district is a GAP if it's a gap in ANY of them
+  const results = await Promise.all(DESERT_CAPS.map(c=>fetch("/api/desertmap?capability="+encodeURIComponent(c)).then(r=>r.json())));
+  const byDist = {};
+  results.forEach((g,idx)=>{
+    if(!g || !g.available) return;
+    const cap = DESERT_CAPS[idx];
+    (g.districts||[]).forEach(d=>{
+      const e = byDist[d.district] || (byDist[d.district] = {district:d.district, state:d.state, lat:d.lat, lon:d.lon, n_fac:d.n_fac, perCap:{}, trusted:0, n_scored:0});
+      e.perCap[cap] = d.status; e.trusted += d.trusted; e.n_scored += d.n_scored;
+    });
+  });
+  const districts = Object.values(byDist).map(d=>{
+    const sts = Object.values(d.perCap);
+    d.status = sts.includes('gap') ? 'gap' : (sts.includes('served') ? 'served' : 'datapoor');
+    return d;
+  });
+  renderDesertMap({available:true, districts, capLabel: DESERT_CAPS.map(c=>c.toUpperCase()).join(' + '), drillCap: DESERT_CAPS[0]});
 }
 function districtDrill(district, cap){
   activate("trust");
@@ -90,9 +114,18 @@ function renderDesertMap(g){
   ds.sort((a,b)=>order[a.status]-order[b.status]);
   const counts={served:0, gap:0, datapoor:0}; ds.forEach(d=>counts[d.status]++);
   const radius=d=>Math.max(3, Math.min(18, 2+Math.sqrt(d.n_fac)*1.2));
-  const tip=d=> `${d.district}${d.state?', '+d.state:''} — ` + (d.status==='served' ? `${d.trusted} trusted of ${d.n_fac} facilities`
-                : (d.status==='gap' ? `GAP — 0 trusted of ${d.n_scored} evaluated` : `${d.n_fac} facilities · too few scored`));
-  const capLbl = g.capability==='any' ? 'any capability' : g.capability.toUpperCase();
+  const drillCap = g.drillCap!==undefined ? g.drillCap : (g.capability||"");
+  const tip=d=>{
+    const head = `${d.district}${d.state?', '+d.state:''}`;
+    if(d.perCap){
+      const gaps = Object.keys(d.perCap).filter(c=>d.perCap[c]==='gap');
+      if(gaps.length) return `${head} — GAP in ${gaps.join(', ').toUpperCase()}`;
+      return `${head} — ${d.status==='served'?'trusted supply':'too few scored'} · ${d.n_fac} facilities`;
+    }
+    return `${head} — ` + (d.status==='served' ? `${d.trusted} trusted of ${d.n_fac} facilities`
+            : (d.status==='gap' ? `GAP — 0 trusted of ${d.n_scored} evaluated` : `${d.n_fac} facilities · too few scored`));
+  };
+  const capLbl = g.capLabel || (g.capability==='any' ? 'any capability' : (g.capability||'').toUpperCase());
   const legend = `
     <p class="legend">
       <span class="dot2" style="background:${col.served}"></span> trusted supply (${counts.served})
@@ -107,7 +140,7 @@ function renderDesertMap(g){
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:11, attribution:'© OpenStreetMap'}).addTo(map);
     ds.forEach(d=>{
       L.circleMarker([d.lat, d.lon], {radius:radius(d), color:'#fff', weight:0.7, fillColor:col[d.status], fillOpacity:0.82})
-        .bindTooltip(tip(d)).on('click', ()=>districtDrill(d.district, g.capability)).addTo(map);
+        .bindTooltip(tip(d)).on('click', ()=>districtDrill(d.district, drillCap)).addTo(map);
     });
     const b = ds.length ? L.latLngBounds(ds.map(d=>[d.lat, d.lon])) : null;
     if(b) map.fitBounds(b, {padding:[16,16]}); else map.setView([22.6, 81], 4);
@@ -116,7 +149,7 @@ function renderDesertMap(g){
   } else {                                        // SVG fallback (no tiles / Leaflet blocked)
     const W=540, H=600, LAT0=6, LAT1=37, LON0=68, LON1=98;
     const X=lon=>(lon-LON0)/(LON1-LON0)*W, Y=lat=>(LAT1-lat)/(LAT1-LAT0)*H;
-    const dots = ds.map(d=>`<circle cx="${X(d.lon).toFixed(1)}" cy="${Y(d.lat).toFixed(1)}" r="${radius(d).toFixed(1)}" fill="${col[d.status]}" fill-opacity="0.8" stroke="#fff" stroke-width="0.5" onclick="districtDrill('${esc(d.district).replace(/'/g,'')}','${esc(g.capability)}')"><title>${esc(tip(d))}</title></circle>`).join("");
+    const dots = ds.map(d=>`<circle cx="${X(d.lon).toFixed(1)}" cy="${Y(d.lat).toFixed(1)}" r="${radius(d).toFixed(1)}" fill="${col[d.status]}" fill-opacity="0.8" stroke="#fff" stroke-width="0.5" onclick="districtDrill('${esc(d.district).replace(/'/g,'')}','${esc(drillCap)}')"><title>${esc(tip(d))}</title></circle>`).join("");
     $("desert-view").innerHTML = legend + `<div class="mapwrap"><svg viewBox="0 0 ${W} ${H}" class="desertmap" preserveAspectRatio="xMidYMid meet">${dots}</svg></div>`;
   }
 }

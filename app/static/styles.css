@@ -170,6 +170,11 @@ textarea{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 1
 .seg-btn:last-child{border-right:0}
 .seg-btn.active{background:var(--blue-soft);color:var(--blue)}
 .desert-bar select{padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink);font:inherit}
+.cap-chips{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.cap-chip-lbl{color:var(--muted);font-size:12px;margin-right:2px}
+.cap-chip{background:#fff;border:1px solid var(--line);border-radius:999px;padding:4px 11px;color:var(--muted);font-weight:600;font-size:12.5px}
+.cap-chip:hover{border-color:#c9d6ea}
+.cap-chip.on{background:var(--blue-soft);border-color:#cdddf5;color:var(--blue)}
 .dot2{display:inline-block;width:11px;height:11px;border-radius:50%;margin:0 2px -1px 6px}
 .mapwrap{padding:4px 14px 14px;display:flex;justify-content:center}
 .desertmap{width:100%;max-width:560px;height:auto;background:#f8fafc;border:1px solid var(--line);border-radius:12px}
