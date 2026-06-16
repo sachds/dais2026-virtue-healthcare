@@ -1065,5 +1065,73 @@ function renderProviderOutreach(r){
   $("provider-outreach").scrollIntoView({behavior:"smooth", block:"start"});
 }
 
+// ---- Ask Care Compass: the app-wide assistant (every page, over the shared tools) -- //
+const ASST_SUGG = {
+  home: ["Where is the worst ICU gap?", "Balance the ICU load in Madhya Pradesh", "Disease burden benchmarks"],
+  desert: ["Where is the worst gap right now?", "Map Bihar's ICU network", "Disease burden benchmarks"],
+  network: ["Balance the load", "Where should I add capacity?", "Schedule a provider circuit"],
+  trust: ["Is this facility's ICU claim credible?", "Refer a patient from here", "Map its care network"],
+  copilot: ["Knee replacement near Pune", "Emergency + ICU near Patna", "Diabetic patient, 3 visits this month"],
+  publichealth: ["Plan a campaign for the worst‑immunized district", "Disease burden benchmarks", "Contain a measles outbreak in Jhansi"],
+  readiness: ["What needs human review?", "Where is the worst gap?", "Disease burden benchmarks"],
+};
+const PANE_LABEL = {home:'Overview',desert:'Gap map',network:'Care Network',trust:'Trust Desk',copilot:'Referral Copilot',publichealth:'Public Health',readiness:'Data Readiness'};
+function curPane(){ return (document.querySelector('.pane.active')?.id||'pane-home').replace('pane-',''); }
+function toggleAsst(force){
+  const p=$("asst-panel"); const open = force===undefined ? !p.classList.contains('open') : !!force;
+  p.classList.toggle('open', open);
+  if(open){ updateAsstCtx(); $("asst-q").focus(); }
+}
+window.toggleAsst=toggleAsst;
+function updateAsstCtx(){
+  const pane=curPane(), f=FOCUS;
+  const bits=[`<span class="actx-pane">on ${esc(PANE_LABEL[pane]||pane)}</span>`];
+  if(f.region) bits.push(`<span class="actx-chip">🗺 ${esc(f.region)}</span>`);
+  if(f.capability) bits.push(`<span class="actx-chip">${esc(f.capability.toUpperCase())}</span>`);
+  if(f.facility) bits.push(`<span class="actx-chip">🏥 ${esc(f.facility.name)}</span>`);
+  $("asst-ctx").innerHTML = bits.join("");
+  $("asst-sugg").innerHTML = (ASST_SUGG[pane]||ASST_SUGG.home).map(s=>`<span class="asugg" onclick="asstEx('${esc(s).replace(/'/g,"\\'")}')">${esc(s)}</span>`).join("");
+}
+function asstEx(q){ $("asst-q").value=q; askAssistant(); }
+window.asstEx=asstEx;
+async function askAssistant(){
+  const q=$("asst-q").value.trim(); if(!q) return;
+  $("asst-sugg").innerHTML="";
+  $("asst-body").innerHTML = `<div class="asst-loading">✦ Thinking — routing to the right agent over the shared tools…</div>`;
+  try{
+    const r=await (await fetch("/api/assistant",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({query:q, focus:FOCUS, page:curPane()})})).json();
+    renderAsst(r);
+  }catch(e){ $("asst-body").innerHTML=`<div class="asst-hint">Assistant error: ${esc(e.message)}</div>`; }
+}
+window.askAssistant=askAssistant;
+let _asstGoto=null;
+function renderAsst(r){
+  _asstGoto=r.goto||null;
+  const trace=(r.trace||[]).map(traceStep).join("");
+  const items=(r.items||[]).map(x=>`<div class="aitem"><b>${esc((x.capability||'').toUpperCase())}</b> in ${esc(x.state||'')} <span class="muted">— ${x.trusted} of ${x.n_scored} trusted</span></div>`).join("");
+  const goBtn = r.goto ? `<button class="btn asst-go" onclick="asstGoto()">${esc(r.goto.label||'Open the full view')} →</button>` : "";
+  $("asst-body").innerHTML=`
+    ${r.title?`<div class="asst-rtitle">${esc(r.title)}</div>`:""}
+    <div class="evidence-lbl" style="margin:8px 0 4px">How I worked — same governed tools the panes use</div>
+    <div class="cp-trace" style="margin-left:0">${trace}</div>
+    ${r.answer?`<div class="asst-answer">${mdLite(r.answer)}</div>`:""}
+    ${items?`<div class="aitems">${items}</div>`:""}
+    ${goBtn}`;
+}
+function asstGoto(){
+  const g=_asstGoto; if(!g) return;
+  if(g.focus) setFocus(g.focus);
+  if(g.facility) setFocus({facility:g.facility});
+  toggleAsst(false);
+  if(g.view==='network') openNetwork((g.focus&&g.focus.capability)||FOCUS.capability||'icu',(g.focus&&g.focus.region)||FOCUS.region);
+  else if(g.view==='copilot'){ activate('copilot'); if(g.from!==undefined) $('cp-from').value=g.from||''; if(g.query){ $('cp-q').value=g.query; runCopilot(); } }
+  else if(g.view==='trust'){ if(g.facility) selectFacility(g.facility.id); else drill(FOCUS.region,FOCUS.capability||''); }
+  else if(g.view==='publichealth') showView('publichealth');
+  else if(g.view==='desert') showView('desert');
+  window.scrollTo(0,0);
+}
+window.asstGoto=asstGoto;
+$("asst-q").addEventListener("keydown",e=>{ if(e.key==="Enter") askAssistant(); });
+
 window.selectFacility=selectFacility;window.override=override;window.addNote=addNote;window.shortlistFac=shortlistFac;
 init();

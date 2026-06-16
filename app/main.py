@@ -137,6 +137,16 @@ async def circuit(payload: dict):
     return JSONResponse(await asyncio.to_thread(net.circuit_analysis, payload.get("capability", "icu"), state))
 
 
+@app.post("/api/assistant")
+async def assistant(payload: dict):
+    q = (payload.get("query") or "").strip()
+    if not q:
+        return JSONResponse({"error": "query required"}, status_code=400)
+    from app import assistant as asst
+    return JSONResponse(await asyncio.to_thread(
+        asst.run, q, payload.get("focus") or {}, payload.get("page", "")))
+
+
 @app.post("/api/copilot")
 async def copilot(payload: dict):
     q = (payload.get("query") or "").strip()

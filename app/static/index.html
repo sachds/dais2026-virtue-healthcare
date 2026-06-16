@@ -6,7 +6,7 @@
   <title>Care Compass — trusted healthcare decisions at every scale</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <link rel="stylesheet" href="/static/styles.css?v=9"/>
+  <link rel="stylesheet" href="/static/styles.css?v=10"/>
 </head>
 <body>
   <header>
@@ -22,6 +22,7 @@
     </nav>
     <div class="spacer"></div>
     <div class="status" id="status">loading…</div>
+    <button id="asst-toggle" class="asst-toggle" onclick="toggleAsst()">✦ Ask AI</button>
   </header>
 
   <div id="focus-bar" class="focus-bar"></div>
@@ -185,6 +186,21 @@
     </section>
   </main>
 
-  <script src="/static/app.js?v=9"></script>
+  <!-- Ask Care Compass — the app-wide assistant, available on every page -->
+  <div id="asst-panel" class="asst-panel">
+    <div class="asst-head">
+      <span class="asst-title">✦ Ask Care Compass</span>
+      <button class="asst-x" onclick="toggleAsst(false)">✕</button>
+    </div>
+    <div class="asst-ctx" id="asst-ctx"></div>
+    <div class="asst-in">
+      <input type="text" id="asst-q" placeholder="Ask anything about the data…"/>
+      <button class="btn" id="asst-send" onclick="askAssistant()">Ask</button>
+    </div>
+    <div class="asst-sugg" id="asst-sugg"></div>
+    <div class="asst-body" id="asst-body"><div class="asst-hint">I act on the data in context — pick a suggestion or ask in your own words. I run the same governed tools the Copilot and Care Network use.</div></div>
+  </div>
+
+  <script src="/static/app.js?v=10"></script>
 </body>
 </html>
