@@ -440,6 +440,10 @@ async function selectFacility(id){
       <div class="meta">${esc([f.city,f.state,f.postcode].filter(Boolean).join(", "))} · ${esc(f.facility_type||"facility")}${f.operator_type?" · "+esc(f.operator_type):""}</div>
       <div class="links">${links||'<span class="chip">no source link</span>'}</div>
     </div>
+    <div class="xscale top">
+      <button class="xbtn pat" onclick="referFrom()">✦ Refer a patient from here</button>
+      <button class="xbtn net" onclick="openNetwork($('capability').value||'icu','${esc((f.state||'').replace(/'/g,''))}')">⇄ See its care network</button>
+    </div>
     <div class="banner">Signals are evidence-based claims to verify, not certified facts. Confidence and the quoted text show how much to trust each one.</div>
     ${caps}
     <div class="actions">
@@ -448,11 +452,6 @@ async function selectFacility(id){
     <div class="actions" style="border-top:0;padding-top:0">
       <button class="btn" onclick="addNote('${esc(id)}')">Save note</button>
       <button class="btn ghost" onclick="shortlistFac(event,'${esc(id)}')">★ Add to shortlist</button>
-    </div>
-    <div class="xscale">
-      <span class="xscale-lbl">Take this further →</span>
-      <button class="xbtn pat" onclick="referFrom()">✦ Refer a patient from here</button>
-      <button class="xbtn net" onclick="openNetwork($('capability').value||'icu','${esc((f.state||'').replace(/'/g,''))}')">⇄ See its care network</button>
     </div>
     ${historyBlock(d.history)}`;
 }
@@ -661,7 +660,10 @@ async function loadNetworkStates(autorun){
   sel.innerHTML = states.length
     ? states.map(s=>`<option value="${esc(s.state)}">${esc(s.state)} — ${s.n_referrer}→${s.n_dest} (${s.ratio}:1)</option>`).join("")
     : `<option value="">no funnel data</option>`;
-  if(autorun && states.length){ sel.value=states[0].state; runNetwork(); }
+  if(autorun && states.length){
+    sel.value = states.some(s=>s.state==='Madhya Pradesh') ? 'Madhya Pradesh' : states[0].state;
+    runNetwork();
+  }
 }
 // cross-scale handoff: Population (Gap map) → Network (Care Network) for a specific state+capability
 async function openNetwork(cap, state){
