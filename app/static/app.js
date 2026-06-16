@@ -34,7 +34,7 @@ function showView(name){
   else if(name==="readiness") showReadiness();
   else if(name==="network") showNetwork();
   else if(name==="publichealth") showPublicHealth();
-  else if(name==="trust" && !$("list").querySelector(".fac")) loadFacilities();
+  else if(name==="trust"){ loadShortlist(); if(!$("list").querySelector(".fac")) loadFacilities(); }
   window.scrollTo(0,0);
 }
 document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>showView(t.dataset.view));
@@ -44,6 +44,7 @@ async function init(){
   $("status").innerHTML = `<b>${OV.facilities?.toLocaleString()||0}</b> facilities · <b>${OV.scored?.toLocaleString()||0}</b> scored`;
   const st = await (await fetch("/api/states")).json();
   for(const s of st.states||[]){const o=document.createElement("option");o.value=s;o.textContent=s;$("state").appendChild(o);}
+  loadShortlist();
   showView("desert");
 }
 
@@ -389,8 +390,23 @@ async function selectFacility(id){
     </div>
     <div class="actions" style="border-top:0;padding-top:0">
       <button class="btn" onclick="addNote('${esc(id)}')">Save note</button>
-      <button class="btn ghost" onclick="shortlistFac('${esc(id)}')">Add to shortlist</button>
-    </div>`;
+      <button class="btn ghost" onclick="shortlistFac(event,'${esc(id)}')">★ Add to shortlist</button>
+    </div>
+    ${historyBlock(d.history)}`;
+}
+// the saved-work round-trip: show what this user has saved/revised on this facility
+function historyBlock(history){
+  const rows=(history||[]).map(h=>{
+    const when = h.created_at ? new Date(h.created_at*1000).toLocaleDateString(undefined,{month:'short',day:'numeric'}) : '';
+    const ic = {note:'📝', decision:'✅', override:'✎'}[h.action] || '·';
+    const what = h.action==='override'
+      ? `revised <b style="text-transform:capitalize">${esc(h.capability||'')}</b> → ${badge(h.new_signal||'none')}`
+      : esc(h.body||'');
+    return `<div class="hist-row"><span class="hist-ic">${ic}</span>
+      <div class="hist-b">${what}<div class="muted">${esc(h.user_id||'planner')} · ${esc(h.action)}${when?' · '+when:''}</div></div></div>`;
+  }).join("");
+  return rows ? `<div class="evidence-lbl" style="margin:15px 0 5px">Your saved work on this facility · revise any signal above</div>
+    <div class="hist">${rows}</div>` : "";
 }
 
 function cardinalityStrip(c){
@@ -433,8 +449,19 @@ function capCard(fid,c){
 
 async function review(payload){return (await fetch("/api/review",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)})).json();}
 async function override(fid,cap,sig){await review({action:"override",facility_id:fid,capability:cap,new_signal:sig});selectFacility(fid);}
-async function addNote(fid){const b=$("note").value.trim();if(!b)return;await review({action:"note",facility_id:fid,body:b});$("note").value="";$("note").placeholder="Saved ✓ — add another…";}
-async function shortlistFac(fid){await review({action:"shortlist",facility_id:fid,shortlist:"default"});alert("Added to shortlist.");}
+async function addNote(fid){const b=$("note").value.trim();if(!b)return;await review({action:"note",facility_id:fid,body:b});selectFacility(fid);}  // re-render → the note appears in "saved work"
+async function shortlistFac(ev,fid){await review({action:"shortlist",facility_id:fid,shortlist:"default"});loadShortlist();if(ev&&ev.target){ev.target.textContent="★ Shortlisted ✓";ev.target.disabled=true;}}
+// Your shortlist — saved facilities the planner can revisit and revise (remove)
+async function loadShortlist(){
+  const bar=$("shortlist-bar"); if(!bar) return;
+  const {shortlist=[]}=await (await fetch("/api/shortlist?name=default")).json();
+  if(!shortlist.length){ bar.className="shortlist-bar"; bar.innerHTML=""; return; }
+  bar.className="shortlist-bar on";
+  bar.innerHTML = `<span class="sl-lbl">★ Your shortlist <b>${shortlist.length}</b></span>` +
+    shortlist.map(s=>`<span class="sl-chip" onclick="selectFacility('${esc(s.id)}')">${esc(s.name||'facility')}${s.city?` <span class="muted">${esc(s.city)}</span>`:''}<b class="sl-x" title="remove" onclick="event.stopPropagation();removeShortlist('${esc(s.id)}')">×</b></span>`).join("");
+}
+async function removeShortlist(fid){ await review({action:"unshortlist",facility_id:fid,shortlist:"default"}); loadShortlist(); }
+window.removeShortlist=removeShortlist;
 
 // ---- Track 3: Referral Copilot (governed multi-agent mesh) ---------------- //
 async function runCopilot(){
