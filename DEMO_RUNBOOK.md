@@ -12,10 +12,14 @@ nav buttons (**Gap map**, **Data readiness**) and the **Copilot** bar are the sp
 > false 'ICU: yes' is dangerous. We score every claim from the facility's own
 > words — and show our work."
 
-### 1 · Where are the gaps? — **Track 2, the landing** *(40s)*
-- Show the **Gap map**: states × capabilities, green = trusted supply, **red = confirmed gap**, grey = too little data.
-> "The key move: we separate a *real* gap — many facilities evaluated, none trusted — from a
-> *data‑poor* region we simply haven't covered. We never call a data hole a desert."
+### 1 · Where is the dangerous shortfall? — **Track 2, the landing** *(45s)*
+- Show the **Gap map**: states × capabilities. Cells shade **thin → robust** by how many evaluated
+  facilities actually show trusted evidence; the **Need** column is **NFHS‑5 health burden**.
+> "At the state level there's no absolute desert — every big state has *some* trusted supply. So we
+> overlay demand: the headline is **highest‑risk shortfalls = health burden × thin trusted supply**.
+> For example ICU in Jharkhand — only ~a quarter of evaluated facilities show trusted evidence, in a
+> high‑burden, low‑insurance state. And we still separate that from a *data‑poor* region we simply
+> haven't covered — we never call a data hole a desert."
 
 ### 2 · Why do we believe a gap? — **Track 1, drill‑down** *(40s)*
 - Click a cell → the facilities → click one → the **trust cards**.
