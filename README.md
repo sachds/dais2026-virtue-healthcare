@@ -1,95 +1,99 @@
-# Medical Desert Planner — Facility Trust Desk
+# Medical Desert Planner — a trust‑and‑agents platform for healthcare‑for‑good
 
 **Databricks Apps & Agents Hackathon for Good · DAIS 2026 · Virtue Foundation healthcare data**
 
 One Databricks App on **Lakebase** that turns 10,000 messy Indian healthcare facility
-records into evidence‑attached, uncertainty‑aware decisions a non‑technical planner
-can trust — addressing **all four challenge tracks as four lenses on one trust‑signal
-substrate.**
+records into **evidence‑attached, geography‑aware, accountable health decisions** — for
+individual patients *and* whole communities. It started as the four challenge tracks on one
+trust‑signal substrate, and grew a fleet of **governed agents** on top: a referral copilot
+and a public‑health planner that show their work, cite their evidence, and are honest about
+what the data can't say.
 
 > Live app: `https://facility-trust-desk-5528334136090880.aws.databricksapps.com`
-> (Databricks SSO required.)
+> (Databricks SSO required.) · Built live during the event — see the commit history.
 
-## What it does
+## What it does — five panes, one Lakebase substrate
 
-| View | Track | What it answers |
+| Pane | Answers | How |
 |---|---|---|
-| **Gap map** (landing) | **T2 — Medical Desert Planner** | *Where is the dangerous shortfall?* A state × capability map that separates **confirmed gaps** (enough evaluated, none trusted) from **data‑poor regions**, shades supply by how *thin* it is, and overlays **NFHS‑5 health burden** — so the headline is the **highest‑RISK shortfalls** (burden × thin trusted supply), not just empty cells. |
-| facility detail | **T1 — Facility Trust Desk** | *Can this facility do what it claims?* Per‑capability trust signal (strong / partial / weak / none) with the **exact source text quoted**, a confidence score, and analyst **override**. |
-| **Ask the Copilot** | **T3 — Referral Copilot** | *Where should a patient go?* A **governed multi‑agent mesh**: plan → retrieve → scrutinize → **adversarial skeptic** → **policy gate** → compose. It shows its work (a step trace), recommends only **vetted** facilities, **flags** over‑claims, and shows what it **blocked** and why — e.g. it refuses a clinic whose only "oncology" is *"urologic oncology"*. |
-| **Data readiness** | **T4 — Data Readiness Desk** | *What must be fixed first?* Field‑coverage profile, weak/suspicious‑claim split, and an **over‑claim review queue** (e.g. a dental clinic claiming oncology) → verify & override. |
+| **◧ Gap map** *(T2 · landing)* | *Where are the deserts?* | A **geographic map** (districts plotted at their lat/long, self‑forming India) **and** a state heatmap, colored by trusted supply for a capability — overlaid with **NFHS‑5 health burden** so the headline is the *dangerous shortfall* (burden × thin supply). District grain surfaces real gaps the state level hides (ICU: 13 gap districts). |
+| **🏥 Trust Desk** *(T1)* | *Can this facility do what it claims?* | Per‑capability signal (strong/partial/weak/none) with the **exact source text quoted** + a **cardinality cross‑check** — a "strong ICU" claim with **0 ICU specialists on record** is flagged as uncorroborated. Analyst **override** persists to Lakebase. |
+| **✦ Referral Copilot** *(T3)* | *Where should this patient go?* | A **governed multi‑agent mesh** (plan → retrieve → scrutinize → **adversarial skeptic** → **policy gate** → compose) that recommends only **vetted** facilities and shows what it **blocked**. For a chronic condition it assembles a **care team** (a diabetic → endocrinology **+ dentist + eye doctor + nephrology**, nearest by distance) and **escalates** on ≥2 visits/month. |
+| **⚕ Public Health** *(new)* | *What's good for the community?* | Population‑scale agents: an **immunization campaign** (find under‑vaccinated districts with local supply → plan it), an **outbreak isolation protocol** (designate isolation facilities from real bed capacity), **disease‑burden benchmarks** by geography vs a national baseline (anaemia × stunting together), and an **agentic escalation** that drafts a WHO / NGO / government referral for a high‑burden area. |
+| **✓ Data Readiness** *(T4)* | *What must be fixed first?* | Field‑coverage + weak‑claim profile, an **over‑claim review queue** (a dental clinic claiming oncology), **clinical classification & capacity** (specialties/procedures → 7 service lines, beds by line, "facilities must have beds / providers must have a specialty"), and supply **by district**. |
 
 ## How it works
 
 ```
-Virtue Foundation data (Databricks Marketplace / Delta Sharing)
-  → load_facilities.py → Lakebase `facilities` (10,088 records)
-  → load_nfhs.py → Lakebase `nfhs_state` (NFHS-5 district indicators → state-level demand)
-  → extract.py (GPT-5.5 on Databricks Model Serving) → Lakebase `trust_signals`
+Virtue Foundation data + India Post PIN + NFHS-5  (Databricks Marketplace / Delta Sharing)
+  → load_facilities.py   → Lakebase facilities (10,088)
+  → load_nfhs.py / load_nfhs_district.py → nfhs_state, nfhs_district (demand: burden, immunization, NCD)
+  → load_pincode.py      → pincode (PIN→district→state); stamps district onto each facility (96%)
+  → classify_facilities.py (app/taxonomy.py) → facility_services (service lines, beds, cap_specialists)
+  → extract.py (GPT-5.5 on Databricks Model Serving) → trust_signals
        {signal, confidence, EXACT cited evidence snippets, rationale}  ← evidence-grounded, uncertainty-honest
-  → FastAPI Databricks App (app/) serves the four views, persists `reviews`
-       Track 2 overlays demand: high-RISK shortfall = health burden × thin trusted supply
-  → Referral Copilot (app/copilot.py) — a GOVERNED multi-agent mesh on Claude Haiku 4.5:
-       plan → retrieve → scrutinize → adversarial SKEPTIC → policy GATE → compose
-       tools = app/agent_tools.py (the trust substrate)  ·  control = app/policy.py
-  → same loop runs under real OMNIGENT (agents/referral) over the trust_desk MCP
-       (mcp_server.py) → Lakebase — composition + control, verified end-to-end
+  → FastAPI Databricks App (app/) serves the five panes, persists reviews
+  → AGENTS on Claude Haiku 4.5, all plan→reason→trace with provenance:
+       app/copilot.py      governed referral mesh + care-team   (control = app/policy.py)
+       app/publichealth.py immunization / outbreak / burden-escalation
+       tools = app/agent_tools.py (the substrate) — also exposed over MCP (mcp_server.py)
+       the same loop runs under real OMNIGENT (agents/referral) → composition + control, verified
 ```
 
-**Design choices:** trust signals are *precomputed* offline (10k × 6 capabilities) so the
-app stays instant and cheap; the LLM is told to use **only the facility's own text** (no
-outside knowledge, generic "all specialties" claims scored *weak* not *strong*); and the
-human **override is first‑class** — the data is *claims to verify, not ground truth*.
+**Design spine:** trust signals are *precomputed* offline so the app stays instant; the LLM uses
+**only the facility's own text** (generic "all specialties" → *weak*, not strong); governance is **code,
+not prompt** (the model can't recommend past `policy.py`); every agent **shows its work** and cites
+evidence; and the data is treated as **claims to verify, not ground truth** — overrides are first‑class.
 
-## Meets the brief
+## Meets the brief (and then some)
 
-- ✅ Runs as a **Databricks App** · ✅ uses **Lakebase** · ✅ non‑technical workflow
-- ✅ **Cites the underlying facility text** for every claim, score, and recommendation
-- ✅ **Communicates uncertainty** (confidence + signal levels + "claims to verify" banner)
-- ✅ **Persists user actions** (overrides / notes / shortlists / review decisions → Lakebase `reviews`)
+- ✅ **Databricks App** on ✅ **Lakebase** · ✅ non‑technical workflow across five panes
+- ✅ **Cites the source text** for every claim, score, recommendation, campaign, and escalation
+- ✅ **Communicates uncertainty** (confidence + signal levels + cardinality + "claims to verify")
+- ✅ **Persists user actions** (overrides / notes / shortlists / decisions → Lakebase `reviews`)
+- ✅ **Agents** — a governed referral mesh + public‑health agents, runnable under **Omnigent** over an MCP
 
 ## Repo layout
 
 ```
-app/            FastAPI app — main.py (routes), db.py (Lakebase), static/ (UI)
-  copilot.py    the governed multi-agent referral mesh (plan→…→govern→compose)
-  agent_tools.py  trust substrate as tools (find_facilities / facility_evidence / state_demand / record_decision)
-  policy.py     governance: trust rules enforced in code (the control pillar)
-  llm.py        Databricks Model Serving client (Claude Haiku 4.5)
-mcp_server.py   the same tools over MCP — what an Omnigent agent mounts (dual stdio/http)
-agents/referral/  Omnigent spec + run script (the mesh under the real harness) + sample run
-db/schema.sql   Lakebase tables: facilities, trust_signals, nfhs_state, reviews
-load_facilities.py / load_nfhs.py   Marketplace + NFHS-5 → Lakebase
-extract.py      GPT-5.5 trust-signal extraction (resumable; EXTRACT_ORDER=random for a representative map)
-scripts/        serve.sh (local), deploy_databricks.sh (App), run_referral_agent.sh (Omnigent)
+app/  FastAPI app (main.py routes, db.py Lakebase, static/ UI)
+  copilot.py       governed referral mesh + care-team (plan→…→govern→compose)
+  publichealth.py  immunization campaign / outbreak protocol / burden escalation agents
+  policy.py        governance — trust rules in code (the control pillar)
+  agent_tools.py   the substrate as tools  ·  taxonomy.py  service-line classification
+  llm.py           Databricks Model Serving client (Claude Haiku 4.5)
+mcp_server.py      the tools over MCP — what an Omnigent agent mounts (dual stdio/http)
+agents/referral/   Omnigent spec + run script + a verified sample run
+db/schema.sql      Lakebase: facilities, trust_signals, reviews, nfhs_state, nfhs_district,
+                   facility_services, pincode
+load_facilities / load_nfhs / load_nfhs_district / load_pincode / classify_facilities / extract.py
+scripts/  serve.sh (local) · deploy_databricks.sh (App) · run_referral_agent.sh (Omnigent)
 ```
 
 ## Run it
 
 ```bash
-# local (needs a .env with LAKEBASE_URL + Databricks profile auth)
-./scripts/serve.sh                      # http://localhost:8099
-python load_facilities.py               # Marketplace → Lakebase facilities
-python load_nfhs.py                      # NFHS-5 → Lakebase nfhs_state (demand overlay)
-python extract.py 2500                   # score a representative sample
-
-# deploy as a Databricks App
-./scripts/deploy_databricks.sh
+./scripts/serve.sh              # local on :8099 (needs .env: LAKEBASE_URL + a Databricks profile)
+python load_facilities.py       # Marketplace → Lakebase
+python load_nfhs.py && python load_nfhs_district.py && python load_pincode.py
+python classify_facilities.py   # service lines, capacity, cardinality
+python extract.py 2500          # representative trust-signal sample
+./scripts/deploy_databricks.sh  # deploy as a Databricks App
 ```
 
 ## Data
 
-Virtue Foundation Dataset (DAIS 2026) `facilities` (10,088 rows), plus the India Post PIN
-directory and NFHS‑5 district health indicators — all via Databricks Marketplace under the
-Government Open Data License (India). Evidence fields are treated as **claims to verify**, not truth.
+Virtue Foundation `facilities` (10,088), the **India Post PIN directory**, and **NFHS‑5** district
+health indicators — all via Databricks Marketplace (Government Open Data License, India). Evidence
+fields are **claims to verify**, not truth.
 
-## Honest notes
+## Honest notes — what this data can and can't do
 
-- Trust signals are precomputed on a **representative sample** during the event; the full 10k
-  is the same `extract.py` run.
-- The **NFHS‑5 demand overlay is built**: each state carries a health‑burden need index, and
-  the headline ranks **high‑risk shortfalls = burden × thin trusted supply** (a *rate* over
-  evaluated facilities, so it's robust to sample size). At the **state** level there are no
-  absolute deserts — every large state has *some* trusted supply — so we rank by thinness‑under‑
-  burden rather than pretend a zero. **District‑level** gaps (where true deserts live) are next.
-- Built live during the hackathon — see the commit history.
+- **Trust signals** are precomputed on a representative sample during the event (same `extract.py` run for the full 10k).
+- **No patient‑level data** in the set — so patient‑finding, the visit‑count escalation, and cancer‑patient
+  rates are scenario/input‑driven, not tracked. The care‑team and referral work on supply + the given context.
+- **No surveillance time‑series** — so outbreak *detection* isn't possible; the isolation protocol responds to a
+  *reported* signal. Both go live the moment an external feed (registry / surveillance) is connected.
+- **No payer network directory** — insurance shows as NFHS *coverage %*, not in‑network participation.
+- Geographic work is **district** grain via the PIN bridge (96% of facilities mapped); the desert map plots
+  real district‑level gaps the state level hides.
