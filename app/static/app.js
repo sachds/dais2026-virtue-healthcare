@@ -1,38 +1,50 @@
-// Facility Trust Desk — planner-facing UI over precomputed, evidence-attached trust signals.
+// Medical Desert Planner — one trust-signal substrate, four track panes.
 const $ = (id) => document.getElementById(id);
 const CAPS = ["icu", "maternity", "emergency", "oncology", "trauma", "nicu"];
 const SIGNAL_LABEL = { strong: "Strong", partial: "Partial", weak: "Weak", none: "No claim" };
 let SELECTED = null;
+let OV = {};            // cached /api/overview (facility + scored counts)
 
 function esc(s){return (s==null?"":String(s)).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
 function badge(sig){return `<span class="sig ${esc(sig)}">${SIGNAL_LABEL[sig]||sig}</span>`;}
 function parseArr(s){try{const a=JSON.parse(s);return Array.isArray(a)?a:[];}catch(e){return [];}}
+function pct(x){ return x==null ? '—' : Math.round(x*100)+'%'; }
+
+// ---- view / pane switching ----------------------------------------------- //
+function activate(name){
+  document.querySelectorAll(".pane").forEach(p=>p.classList.toggle("active", p.id==="pane-"+name));
+  document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active", t.dataset.view===name));
+}
+function showView(name){
+  activate(name);
+  if(name==="desert") showDesert();
+  else if(name==="readiness") showReadiness();
+  else if(name==="trust" && !$("list").querySelector(".fac")) loadFacilities();
+  window.scrollTo(0,0);
+}
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>showView(t.dataset.view));
 
 async function init(){
-  const ov = await (await fetch("/api/overview")).json();
-  $("status").innerHTML = `<b>${ov.facilities?.toLocaleString()||0}</b> facilities · <b>${ov.scored?.toLocaleString()||0}</b> scored`;
+  OV = await (await fetch("/api/overview")).json();
+  $("status").innerHTML = `<b>${OV.facilities?.toLocaleString()||0}</b> facilities · <b>${OV.scored?.toLocaleString()||0}</b> scored`;
   const st = await (await fetch("/api/states")).json();
   for(const s of st.states||[]){const o=document.createElement("option");o.value=s;o.textContent=s;$("state").appendChild(o);}
-  showDesert();
-  loadFacilities();
+  showView("desert");
 }
 
-// ---- Track 2: Medical Desert gap map ----
+// ---- Track 2: Medical Desert gap map ------------------------------------- //
 async function showDesert(){
-  $("detail-title").textContent = "Care gaps by state — trusted supply vs. coverage";
-  $("detail").innerHTML = `<div class="empty">Loading the gap map…</div>`;
+  $("desert-body").innerHTML = `<div class="empty">Loading the gap map…</div>`;
   const g = await (await fetch("/api/desert")).json();
   renderDesert(g);
 }
 function cellLabel(c){ return c.status==='served' ? String(c.trusted) : (c.status==='gap' ? '0' : '·'); }
-// served cells shade pale→deep green by share of evaluated facilities that are trusted
 function cellBg(c){
-  if(c.status!=='served') return "";                 // gap/datapoor use their CSS class
+  if(c.status!=='served') return "";
   const r = c.trusted_rate==null ? 0.5 : c.trusted_rate;
-  const L = Math.round(74 - 36*r);                    // low rate = pale, high rate = deep
+  const L = Math.round(74 - 36*r);
   return `background:hsl(157 47% ${L}%);color:${L<54?'#fff':'#1f3a2e'}`;
 }
-function pct(x){ return x==null ? '—' : Math.round(x*100)+'%'; }
 function renderDesert(g){
   const head = `<th>State</th>` + g.caps.map(c=>`<th>${esc(c)}</th>`).join("") + `<th title="NFHS-5 health burden">need</th>`;
   const rows = g.states.map(s=>{
@@ -48,7 +60,7 @@ function renderDesert(g){
     return `<tr><td class="st">${esc(s.state)} <span class="muted">${s.n_total}</span></td>${cells}<td style="text-align:center">${pill}</td></tr>`;
   }).join("");
   const risks = (g.top_risks||[]).map(x=>{
-    const badge = x.status==='gap'
+    const rb = x.status==='gap'
       ? `<span class="sig weak">confirmed gap</span>`
       : `<span class="risk-badge ${x.tier}">${x.tier==='high'?'high-risk':'shortfall'}</span>`;
     const ctx = [];
@@ -56,10 +68,10 @@ function renderDesert(g){
     if(x.insurance!=null) ctx.push(`${x.insurance}% insured`);
     const burden = ctx.length ? ` <span class="muted">· burden ${ctx.join(' · ')}</span>` : '';
     return `<div class="gaprow" onclick="drill('${esc(x.state).replace(/'/g,'')}','${x.capability}')">
-       ${badge} <b style="text-transform:capitalize">${esc(x.capability)}</b> in ${esc(x.state)}
+       ${rb} <b style="text-transform:capitalize">${esc(x.capability)}</b> in ${esc(x.state)}
        <span class="muted"> — ${x.trusted} of ${x.n_scored} evaluated trusted (${pct(x.trusted_rate)})</span>${burden}</div>`;
   }).join("");
-  $("detail").innerHTML = `
+  $("desert-body").innerHTML = `
     <p class="legend">
       <span class="cell served" style="background:hsl(157 47% 66%)">&nbsp;</span><span class="cell served" style="background:hsl(157 47% 40%)">&nbsp;</span> thin → robust trusted supply
       <span class="cell gap">&nbsp;</span> confirmed gap
@@ -71,28 +83,52 @@ function renderDesert(g){
     ${risks || '<div class="muted" style="padding:0 16px 14px">No demand-ranked shortfalls yet — more facilities need scoring.</div>'}`;
 }
 function drill(state, cap){
+  activate("trust");
   $("state").value = state; $("capability").value = cap; $("signal").value = "";
   updateHint(); loadFacilities();
-  document.querySelector("main").scrollIntoView({behavior:"smooth", block:"start"});
+  window.scrollTo(0,0);
 }
-$("nav-map").onclick = showDesert;
 window.drill = drill;
 
-// ---- Track 4: Data Readiness Desk ----
+// ---- Track 4: Data Readiness Desk ---------------------------------------- //
 async function showReadiness(){
-  $("detail-title").textContent = "Data readiness — what to fix before trusting this data";
-  $("detail").innerHTML = `<div class="empty">Profiling the dataset…</div>`;
+  $("readiness-body").innerHTML = `<div class="empty">Profiling the dataset…</div>`;
   const r = await (await fetch("/api/readiness")).json();
   renderReadiness(r);
 }
 function renderReadiness(r){
+  const totalFac = OV.facilities || r.total || 0;
+  const scored = OV.scored || 0;
+  const d = r.signal_dist || {strong:0,partial:0,weak:0,none:0};
+  const evald = (d.strong+d.partial+d.weak) || 1;
+  const weakpct = Math.round(100*(d.weak||0)/evald);
+  const scoredpct = totalFac ? Math.round(100*scored/totalFac) : 0;
+  const card = (n,l,sub,cls)=>`<div class="stat ${cls||''}"><div class="stat-n">${n}${sub?` <span>${sub}</span>`:''}</div><div class="stat-l">${l}</div></div>`;
+  const cards = [
+    card(totalFac.toLocaleString(),"facilities"),
+    card(scored.toLocaleString(),"evaluated",scoredpct+"%"),
+    card((d.weak||0).toLocaleString(),"weak / suspicious claims",weakpct+"%","warn"),
+    card((r.queue||[]).length,"in the review queue",null,"warn"),
+    card((r.reviewed||0).toLocaleString(),"reviewed by an analyst"),
+  ].join("");
+
   const cov = (r.coverage||[]).map(c=>{
     const col = c.pct>=80?'var(--strong)':(c.pct>=50?'var(--partial)':'var(--weak)');
     return `<div class="cov-row"><span class="cov-f">${esc(c.field.replace(/_/g,' '))}</span>
       <span class="cov-bar"><i style="width:${c.pct}%;background:${col}"></i></span><span class="cov-p">${c.pct}%</span></div>`;
   }).join("");
-  const d = r.signal_dist||{strong:0,partial:0,weak:0,none:0};
-  const weakpct = Math.round(100*(d.weak||0)/((d.strong+d.partial+d.weak)||1));
+
+  const tot = (d.strong+d.partial+d.weak+d.none) || 1;
+  const seg = (k,col)=>`<span class="db-seg" style="width:${100*(d[k]||0)/tot}%;background:${col}" title="${k}: ${(d[k]||0).toLocaleString()}"></span>`;
+  const distbar = `<div class="distbar">${seg('strong','var(--strong)')}${seg('partial','var(--partial)')}${seg('weak','var(--weak)')}${seg('none','var(--none)')}</div>
+    <div class="db-legend">
+      <span><i style="background:var(--strong)"></i>strong ${(d.strong||0).toLocaleString()}</span>
+      <span><i style="background:var(--partial)"></i>partial ${(d.partial||0).toLocaleString()}</span>
+      <span><i style="background:var(--weak)"></i>weak ${(d.weak||0).toLocaleString()}</span>
+      <span><i style="background:var(--none)"></i>no claim ${(d.none||0).toLocaleString()}</span>
+    </div>
+    <p class="muted" style="margin:10px 0 0"><b>${weakpct}%</b> of claims with any evidence are only weak — generic / unsourced text, not real capability.</p>`;
+
   const q = (r.queue||[]).map(x=>{
     const cls = x.flag==='over-claim' ? 'weak' : (x.flag.indexOf('weak')===0 ? 'weak' : 'partial');
     return `<div class="qrow" onclick="selectFacility('${esc(x.id)}')">
@@ -101,16 +137,26 @@ function renderReadiness(r){
       <div class="muted" style="margin-top:2px">claims <b style="text-transform:capitalize">${esc(x.capability)}</b> — ${esc(x.signal)} (${Math.round((x.confidence||0)*100)}%)</div>
     </div>`;
   }).join("");
-  $("detail").innerHTML = `
-    <div class="evidence-lbl" style="margin:14px 16px 6px">Field coverage — how complete the source records are</div>
-    ${cov}
-    <div class="evidence-lbl" style="margin:16px 16px 4px">Evidence quality of evaluated claims</div>
-    <p class="muted" style="margin:2px 16px">${d.strong} strong · ${d.partial} partial · <b style="color:var(--weak)">${d.weak} weak / suspicious</b> · ${d.none} no-claim — <b>${weakpct}%</b> of claims with any evidence are only weak.</p>
-    <div class="evidence-lbl" style="margin:16px 16px 4px">Needs human review — high-leverage records (${r.reviewed||0} reviewed) · click to verify &amp; override</div>
-    ${q || '<div class="muted" style="padding:0 16px 14px">Review queue is clear.</div>'}`;
-}
-$("nav-ready").onclick = showReadiness;
 
+  $("readiness-body").innerHTML = `
+    <div class="stat-cards">${cards}</div>
+    <div class="rd-grid">
+      <section class="panel">
+        <h2>Field coverage — how complete the source records are</h2>
+        <div class="body">${cov}</div>
+      </section>
+      <section class="panel">
+        <h2>Evidence quality of evaluated claims</h2>
+        <div class="body">${distbar}</div>
+      </section>
+    </div>
+    <section class="panel">
+      <h2>Needs human review — over‑claims &amp; contradictions · click to verify &amp; override</h2>
+      <div class="body">${q || '<div class="empty">Review queue is clear.</div>'}</div>
+    </section>`;
+}
+
+// ---- Track 1: Facility Trust Desk ---------------------------------------- //
 ["q","state","capability","signal"].forEach(id=>{
   $(id).addEventListener(id==="q"?"input":"change", debounce(()=>{updateHint();loadFacilities();},250));
 });
@@ -139,20 +185,23 @@ async function loadFacilities(){
       <div class="nm">${esc(f.name||"(unnamed)")}</div>
       <div class="meta">${esc([f.city,f.state].filter(Boolean).join(", "))} · ${esc(f.facility_type||"facility")}</div>
       <div class="row">${row}</div></div>`;
-  }).join("") : `<div class="empty">No facilities match. ${ $("status").textContent.startsWith("<b>0") ? "Data still loading…" : "Try widening the filters."}</div>`;
+  }).join("") : `<div class="empty">No facilities match. ${ (OV.facilities||0)===0 ? "Data still loading…" : "Try widening the filters."}</div>`;
 }
 
 async function selectFacility(id){
   SELECTED = id;
+  activate("trust");
+  if(!$("list").querySelector(".fac")) loadFacilities();
   document.querySelectorAll(".fac").forEach(e=>e.classList.toggle("sel", e.getAttribute("onclick").includes(id)));
+  $("fac-detail").innerHTML = `<div class="empty">Loading facility…</div>`;
   const d = await (await fetch("/api/facility/"+encodeURIComponent(id))).json();
-  if(!d.facility){return;}
+  if(!d.facility){ $("fac-detail").innerHTML = `<div class="empty">Facility not found.</div>`; return; }
   const f = d.facility;
   $("detail-title").textContent = f.name || "Facility";
   const srcs = parseArr(f.source_urls).filter(Boolean).slice(0,3);
   const links = srcs.map(u=>`<a class="chip" href="${esc(u)}" target="_blank" rel="noopener">source ↗</a>`).join("");
   const caps = d.capabilities.map(c=>capCard(id,c)).join("");
-  $("detail").innerHTML = `
+  $("fac-detail").innerHTML = `
     <div class="fac-head">
       <div class="nm">${esc(f.name||"(unnamed)")}</div>
       <div class="meta">${esc([f.city,f.state,f.postcode].filter(Boolean).join(", "))} · ${esc(f.facility_type||"facility")}${f.operator_type?" · "+esc(f.operator_type):""}</div>
@@ -197,33 +246,15 @@ async function override(fid,cap,sig){await review({action:"override",facility_id
 async function addNote(fid){const b=$("note").value.trim();if(!b)return;await review({action:"note",facility_id:fid,body:b});$("note").value="";$("note").placeholder="Saved ✓ — add another…";}
 async function shortlistFac(fid){await review({action:"shortlist",facility_id:fid,shortlist:"default"});alert("Added to shortlist.");}
 
-function renderOverview(ov){
-  const rows = (ov.caps||CAPS).map(cap=>{
-    const g = ov.grid[cap]||{};
-    const cell=(s,col)=>`<td><span class="n" style="color:${col}">${(g[s]||0).toLocaleString()}</span></td>`;
-    return `<tr><td>${cap}</td>
-      ${cell("strong","var(--strong)")}${cell("partial","var(--partial)")}${cell("weak","var(--weak)")}${cell("none","var(--none)")}</tr>`;
-  }).join("");
-  $("detail").innerHTML = `
-    <p style="color:var(--muted);margin:4px 6px 14px">How many facilities show each level of evidence for each capability. Pick a capability + trust level on the left to drill in.</p>
-    <table class="grid">
-      <tr><th>Capability</th>
-        <th><span class="dot" style="background:var(--strong)"></span>Strong</th>
-        <th><span class="dot" style="background:var(--partial)"></span>Partial</th>
-        <th><span class="dot" style="background:var(--weak)"></span>Weak</th>
-        <th><span class="dot" style="background:var(--none)"></span>No claim</th></tr>
-      ${rows}
-    </table>`;
-}
-// ---- Referral Copilot (live agent) ----
+// ---- Track 3: Referral Copilot (governed multi-agent mesh) ---------------- //
 async function runCopilot(){
   const q = $("cp-q").value.trim(); if(!q) return;
-  $("detail-title").textContent = "Referral Copilot";
-  $("detail").innerHTML = `<div class="empty">Planning → searching Lakebase → reasoning over evidence…</div>`;
+  activate("copilot");
+  $("copilot-body").innerHTML = `<div class="empty">Planning → searching Lakebase → scrutinizing → challenging → governing…</div>`;
   try{
     const r = await (await fetch("/api/copilot",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({query:q})})).json();
     renderCopilot(r);
-  }catch(e){ $("detail").innerHTML = `<div class="empty">Copilot error: ${esc(e.message)}</div>`; }
+  }catch(e){ $("copilot-body").innerHTML = `<div class="empty">Copilot error: ${esc(e.message)}</div>`; }
 }
 function renderCopilot(r){
   const plan=r.plan||{};
@@ -247,7 +278,7 @@ function renderCopilot(r){
     </div>`).join("");
   const demand = (r.demand && r.demand.need_index!=null)
     ? `<div class="cp-demand">📊 NFHS demand · <b>${esc(r.demand.state)}</b>: need ${r.demand.need_index} — ${r.demand.institutional_birth}% births in-facility, ${r.demand.insurance}% insured</div>` : "";
-  $("detail").innerHTML=`
+  $("copilot-body").innerHTML=`
     <div class="cp-plan"><b>Agent plan:</b> ${chips||'—'} · retrieved <b>${r.n_candidates||0}</b> evidence-backed candidates from Lakebase</div>
     <div class="evidence-lbl" style="margin:12px 16px 4px">How the agent worked — plan → retrieve → scrutinize → challenge → govern → compose</div>
     <div class="cp-trace">${trace}</div>

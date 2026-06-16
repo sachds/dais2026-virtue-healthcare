@@ -3,62 +3,99 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>Facility Trust Desk</title>
+  <title>Medical Desert Planner — Facility Trust Desk</title>
   <link rel="stylesheet" href="/static/styles.css"/>
 </head>
 <body>
   <header>
     <div class="logo">Medical <b>Desert Planner</b></div>
-    <div class="tag">Where are the real gaps in trusted care — and how sure are we?</div>
+    <nav class="tabs">
+      <button class="tab active" data-view="desert">◧ Gap map</button>
+      <button class="tab" data-view="trust">🏥 Trust Desk</button>
+      <button class="tab" data-view="copilot">✦ Referral Copilot</button>
+      <button class="tab" data-view="readiness">✓ Data Readiness</button>
+    </nav>
     <div class="spacer"></div>
-    <button class="navbtn" id="nav-map">◧ Gap map</button>
-    <button class="navbtn" id="nav-ready">✓ Data readiness</button>
     <div class="status" id="status">loading…</div>
   </header>
 
-  <div class="controls">
-    <input type="text" id="q" placeholder="Search facility, city, or state… (e.g. Fortis, Jaipur, Punjab)"/>
-    <select id="state"><option value="">All states</option></select>
-    <select id="capability">
-      <option value="">Capability: any</option>
-      <option value="icu">ICU</option>
-      <option value="maternity">Maternity</option>
-      <option value="emergency">Emergency</option>
-      <option value="oncology">Oncology</option>
-      <option value="trauma">Trauma</option>
-      <option value="nicu">NICU</option>
-    </select>
-    <select id="signal">
-      <option value="">Trust: any</option>
-      <option value="strong">Strong evidence</option>
-      <option value="partial">Partial evidence</option>
-      <option value="weak">Weak / suspicious</option>
-      <option value="none">No claim</option>
-    </select>
-    <span class="hint" id="hint">Pick a capability to rank facilities by trust signal.</span>
-  </div>
-
-  <div class="copilot">
-    <div class="cp-row">
-      <span class="cp-icon">✦</span>
-      <input type="text" id="cp-q" placeholder="Ask the Referral Copilot — where should a patient go? e.g. &quot;emergency and ICU near Patna&quot;"/>
-      <button class="btn" id="cp-ask">Ask</button>
-    </div>
-    <div class="cp-ex">Try:
-      <span onclick="cpEx('emergency and ICU near Patna')">emergency + ICU near Patna</span> ·
-      <span onclick="cpEx('maternity and NICU near Jaipur')">maternity + NICU near Jaipur</span> ·
-      <span onclick="cpEx('cancer care in Maharashtra')">cancer care in Maharashtra</span>
-    </div>
-  </div>
-
   <main>
-    <section class="panel">
-      <h2>Facilities <span id="count" style="text-transform:none;letter-spacing:0"></span></h2>
-      <div class="body" id="list"><div class="empty">Loading…</div></div>
+    <!-- Track 2 — Medical Desert Planner -->
+    <section class="pane active" id="pane-desert">
+      <div class="pane-head">
+        <h1>Medical Desert Planner</h1>
+        <p>Where is the dangerous shortfall? Trusted supply × NFHS‑5 health burden, by state.</p>
+      </div>
+      <section class="panel"><div class="body" id="desert-body"><div class="empty">Loading the gap map…</div></div></section>
     </section>
-    <section class="panel" id="detail-panel">
-      <h2 id="detail-title">Overview — evidence across all facilities</h2>
-      <div class="body" id="detail"></div>
+
+    <!-- Track 1 — Facility Trust Desk -->
+    <section class="pane" id="pane-trust">
+      <div class="pane-head">
+        <h1>Facility Trust Desk</h1>
+        <p>Can this facility do what it claims? Per‑capability trust signals with the exact source text quoted.</p>
+      </div>
+      <div class="controls">
+        <input type="text" id="q" placeholder="Search facility, city, or state… (e.g. Fortis, Jaipur, Punjab)"/>
+        <select id="state"><option value="">All states</option></select>
+        <select id="capability">
+          <option value="">Capability: any</option>
+          <option value="icu">ICU</option>
+          <option value="maternity">Maternity</option>
+          <option value="emergency">Emergency</option>
+          <option value="oncology">Oncology</option>
+          <option value="trauma">Trauma</option>
+          <option value="nicu">NICU</option>
+        </select>
+        <select id="signal">
+          <option value="">Trust: any</option>
+          <option value="strong">Strong evidence</option>
+          <option value="partial">Partial evidence</option>
+          <option value="weak">Weak / suspicious</option>
+          <option value="none">No claim</option>
+        </select>
+        <span class="hint" id="hint">Pick a capability to rank facilities by trust signal.</span>
+      </div>
+      <div class="trust-grid">
+        <section class="panel">
+          <h2>Facilities <span id="count" style="text-transform:none;letter-spacing:0"></span></h2>
+          <div class="body" id="list"><div class="empty">Loading…</div></div>
+        </section>
+        <section class="panel">
+          <h2 id="detail-title">Facility detail</h2>
+          <div class="body" id="fac-detail"><div class="empty">Select a facility on the left to see its cited evidence.</div></div>
+        </section>
+      </div>
+    </section>
+
+    <!-- Track 3 — Referral Copilot -->
+    <section class="pane" id="pane-copilot">
+      <div class="pane-head">
+        <h1>Referral Copilot</h1>
+        <p>Where should a patient go? A governed multi‑agent mesh that shows its work — and what it refused.</p>
+      </div>
+      <div class="copilot">
+        <div class="cp-row">
+          <span class="cp-icon">✦</span>
+          <input type="text" id="cp-q" placeholder="Ask the Referral Copilot — e.g. &quot;cancer care near Ranchi&quot;"/>
+          <button class="btn" id="cp-ask">Ask</button>
+        </div>
+        <div class="cp-ex">Try:
+          <span onclick="cpEx('cancer care near Ranchi')">cancer care near Ranchi</span> ·
+          <span onclick="cpEx('emergency and ICU near Patna')">emergency + ICU near Patna</span> ·
+          <span onclick="cpEx('maternity and NICU near Jaipur')">maternity + NICU near Jaipur</span>
+        </div>
+      </div>
+      <section class="panel"><div class="body" id="copilot-body"><div class="empty">Ask a question above — the agent plans, retrieves from Lakebase, challenges each claim, governs the result, and shows the trace.</div></div></section>
+    </section>
+
+    <!-- Track 4 — Data Readiness Desk -->
+    <section class="pane" id="pane-readiness">
+      <div class="pane-head">
+        <h1>Data Readiness Desk</h1>
+        <p>The data is claims to verify, not truth. What to fix first — and the records that most need a human.</p>
+      </div>
+      <div id="readiness-body"><div class="empty">Profiling the dataset…</div></div>
     </section>
   </main>
 

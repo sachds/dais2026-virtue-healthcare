@@ -19,14 +19,24 @@ header .tag{color:var(--muted);font-size:13px}
 header .spacer{flex:1}
 header .status{color:var(--muted);font-size:12.5px}
 header .status b{color:var(--ink)}
+header .tabs{display:flex;gap:5px;margin-left:8px}
+.tab{background:transparent;border:1px solid transparent;border-radius:9px;padding:6px 12px;color:var(--muted);font-weight:600;font-size:13.5px}
+.tab:hover{background:var(--bg);color:var(--ink)}
+.tab.active{background:var(--blue-soft);border-color:#cdddf5;color:var(--blue)}
 
-.controls{display:flex;gap:10px;flex-wrap:wrap;padding:12px 22px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:53px;z-index:4}
+.controls{display:flex;gap:10px;flex-wrap:wrap;padding:12px 14px;background:var(--panel);border:1px solid var(--line);border-radius:12px;margin-bottom:14px}
 .controls input,.controls select{padding:8px 11px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink);font:inherit}
 .controls input{min-width:280px}
 .controls .hint{color:var(--muted);font-size:12px;align-self:center}
 
-main{display:grid;grid-template-columns:minmax(330px,420px) 1fr;gap:16px;padding:16px 22px;align-items:start}
-@media(max-width:900px){main{grid-template-columns:1fr}}
+main{padding:18px 22px}
+.pane{display:none}
+.pane.active{display:block}
+.pane-head{margin:2px 2px 16px}
+.pane-head h1{margin:0;font-size:20px;font-weight:780;letter-spacing:-.3px}
+.pane-head p{margin:3px 0 0;color:var(--muted);font-size:13.5px}
+.trust-grid{display:grid;grid-template-columns:minmax(330px,420px) 1fr;gap:16px;align-items:start}
+@media(max-width:900px){.trust-grid{grid-template-columns:1fr}}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px}
 .panel h2{margin:0;padding:12px 16px;font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);border-bottom:1px solid var(--line)}
 .panel .body{padding:10px 14px;max-height:78vh;overflow:auto}
@@ -88,7 +98,7 @@ textarea{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 1
 .empty{color:var(--muted);text-align:center;padding:30px 12px}
 
 /* Referral Copilot */
-.copilot{padding:14px 22px;background:linear-gradient(180deg,#eef5ff,#f6f8fb);border-bottom:1px solid var(--line)}
+.copilot{padding:14px 16px;background:linear-gradient(180deg,#eef5ff,#f6f8fb);border:1px solid #dbe6fb;border-radius:12px;margin-bottom:14px}
 .cp-row{display:flex;gap:10px;align-items:center}
 .cp-icon{color:var(--blue);font-size:18px}
 .cp-row input{flex:1;padding:11px 13px;border:1px solid #cdddf5;border-radius:10px;font:inherit;background:#fff}
@@ -151,12 +161,25 @@ td.st .muted{font-weight:400;font-size:11px}
 .risk-badge.med{color:#b45309;background:#fdf3e6}
 .risk-badge.low{color:var(--muted);background:var(--none-bg)}
 
-/* Track 4 — data readiness */
-.cov-row{display:flex;align-items:center;gap:10px;padding:3px 16px}
+/* Track 4 — data readiness dashboard */
+.stat-cards{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.stat{flex:1;min-width:140px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px 15px}
+.stat-n{font-size:23px;font-weight:760;line-height:1.1}
+.stat-n span{font-size:13px;color:var(--muted);font-weight:650}
+.stat-l{color:var(--muted);font-size:12px;margin-top:3px}
+.stat.warn .stat-n{color:var(--weak)}
+.rd-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+@media(max-width:900px){.rd-grid{grid-template-columns:1fr}}
+.distbar{display:flex;height:16px;border-radius:8px;overflow:hidden;margin:4px 0 10px}
+.db-seg{display:block;height:100%}
+.db-legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.db-legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:middle}
+.cov-row{display:flex;align-items:center;gap:10px;padding:4px 0}
 .cov-f{width:130px;text-transform:capitalize;font-size:13px;color:#33415c}
 .cov-bar{flex:1;height:9px;background:#eef2f7;border-radius:5px;overflow:hidden;max-width:380px}
 .cov-bar i{display:block;height:100%}
 .cov-p{width:42px;text-align:right;font-size:12px;color:var(--muted)}
-.qrow{padding:9px 16px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13.5px}
+.qrow{padding:10px 2px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13.5px}
+.qrow:last-child{border-bottom:0}
 .qrow:hover{background:#fbfdff}
 .banner{background:#fffbe9;border:1px solid #f3e2a8;color:#7a5b08;font-size:12.5px;padding:8px 14px;margin:0 16px 12px;border-radius:9px}
