@@ -611,8 +611,55 @@ function renderNetwork(r){
        <span class="dot2" style="background:#fff;border:2px solid #dc2626"></span> single‑point‑of‑failure
        <span class="muted">· bubble = referral load · grey = referring facility · click a chokepoint for its evidence</span></p>
      <div class="evidence-lbl" style="margin:14px 16px 4px">Chokepoints — the destinations the region depends on · click any for its cited evidence</div>
-     ${bn}`;
+     ${bn}
+     <div class="nw-site-cta"><button class="btn" onclick="runSiting()">⊕ Where should the next ${cap} go?</button>
+       <span class="muted">Counterfactual — the highest‑impact existing facility to resource next.</span></div>
+     <div id="nw-siting"></div>`;
   drawNetworkMap(r);
+}
+async function runSiting(){
+  const cap=$("nw-cap").value, state=$("nw-state").value, el=$("nw-siting");
+  if(!el) return;
+  showLoading("nw-siting", ["Evaluating every existing facility as a candidate site","Simulating re‑routing — travel saved + load relieved","Ranking the highest‑impact intervention","Writing the siting recommendation"], "Siting optimizer");
+  el.scrollIntoView({behavior:"smooth",block:"center"});
+  try{
+    const r=await (await fetch("/api/siting",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({capability:cap,state})})).json();
+    stopLoading(); renderSiting(r);
+  }catch(e){ stopLoading(); el.innerHTML=`<div class="empty">Siting error: ${esc(e.message)}</div>`; }
+}
+window.runSiting=runSiting;
+function renderSiting(r){
+  const cap=(r.capability||'').toUpperCase();
+  const trace=(r.trace||[]).map(traceStep).join("");
+  const sites=(r.sites||[]);
+  if(!sites.length){ $("nw-siting").innerHTML=`<div class="empty" style="margin:12px 16px">${esc(r.recommendation||'No high‑impact site found.')}</div>`; return; }
+  const rec=r.recommendation?`<div class="nw-rec"><div class="nw-rec-h">⊕ Highest‑impact intervention</div>${esc(r.recommendation)}</div>`:"";
+  const rows=sites.map((s,i)=>`
+    <div class="nw-row site ${i===0?'best':''}" onclick="selectFacility('${esc(s.id)}')">
+      <div class="nw-deg"><b>${s.captured}</b><span>closer</span></div>
+      <div class="nw-main">
+        <div class="nw-top"><span class="nw-rank">#${i+1}</span><b>${esc(s.name||'')}</b>
+          <span class="muted">${esc(s.city||'')}${s.beds?' · '+s.beds+' beds':''}</span>
+          <span class="nw-share">${s.km_saved_avg} km/ea</span></div>
+        <div class="nw-why pos">✓ ${s.captured} facilities gain a closer ${cap} · ${(s.km_saved_total||0).toLocaleString()} km saved total${s.relieves_choke?` · pulls ${s.relieves_choke} off the chokepoint`:''}</div>
+      </div></div>`).join("");
+  $("nw-siting").innerHTML=`
+    <section class="panel" style="margin:14px 16px">
+      <h2>⊕ Where to add capacity — counterfactual siting</h2>
+      <div class="body">
+        <div class="cp-trace" style="margin-left:0">${trace}</div>
+        ${rec}
+        <div class="evidence-lbl" style="margin:12px 0 4px">Highest‑impact sites to resource next · click any for its record</div>
+        ${rows}
+      </div>
+    </section>`;
+  if(_nwLeaflet && window.L){           // drop "add here" markers on the network map
+    sites.slice(0,3).forEach((s,i)=>{
+      L.circleMarker([s.lat,s.lon],{radius:i===0?11:8,color:'#2563eb',weight:2.6,fillColor:'#2563eb',fillOpacity:i===0?0.55:0.32})
+        .bindTooltip(`⊕ Add ${cap} here — ${s.name}${s.city?', '+s.city:''}: ${s.captured} facilities closer`).addTo(_nwLeaflet);
+    });
+    try{ _nwLeaflet.invalidateSize(); }catch(e){}
+  }
 }
 function drawNetworkMap(r){
   const el=$("nw-map"); if(!el) return;

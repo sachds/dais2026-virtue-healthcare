@@ -110,6 +110,15 @@ async def network(payload: dict):
     return JSONResponse(await asyncio.to_thread(net.network_analysis, payload.get("capability", "icu"), state))
 
 
+@app.post("/api/siting")
+async def siting(payload: dict):
+    state = (payload.get("state") or "").strip()
+    if not state:
+        return JSONResponse({"error": "state required"}, status_code=400)
+    from app import network as net
+    return JSONResponse(await asyncio.to_thread(net.siting_analysis, payload.get("capability", "icu"), state))
+
+
 @app.post("/api/copilot")
 async def copilot(payload: dict):
     q = (payload.get("query") or "").strip()

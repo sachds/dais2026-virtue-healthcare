@@ -1000,6 +1000,86 @@ def referral_network(capability: str, state: str, max_referrers: int = 400) -> d
             "n_spof": sum(1 for n in nodes if n["spof"])}
 
 
+_HOSPITAL_TYPES = ("hospital", "medicalcollege", "nursinghome", "medicalcenter")
+
+
+def siting_impact(capability: str, state: str, top: int = 6, max_candidates: int = 200) -> dict:
+    """Mission-siting counterfactual on top of the referral network: if you could
+    resource ONE existing facility to become a trusted `capability` destination, WHERE
+    relieves the most? For each candidate (an existing non-trusted hospital), simulate
+    re-routing — how many referrers would find it closer than their current nearest
+    destination, the total travel saved, and how much load it pulls off the chokepoint.
+    This is exactly Virtue Foundation's decision: where to place the next specialist."""
+    cap = capability if capability in CAPS else "icu"
+    with _conn() as c, c.cursor() as cur:
+        cur.execute(
+            """SELECT f.id, f.name, f.city, f.facility_type, f.latitude, f.longitude,
+                      max(CASE WHEN t.capability=%s AND t.signal IN ('strong','partial') THEN 1 ELSE 0 END) AS trusted,
+                      coalesce(max(fs.total_beds),0) AS beds
+               FROM facilities f
+               LEFT JOIN trust_signals t ON t.facility_id=f.id
+               LEFT JOIN facility_services fs ON fs.facility_id=f.id
+               WHERE f.state=%s AND f.latitude IS NOT NULL AND f.longitude IS NOT NULL
+               GROUP BY f.id, f.name, f.city, f.facility_type, f.latitude, f.longitude""",
+            (cap, state))
+        rows = cur.fetchall()
+
+    dests = [r for r in rows if r["trusted"] == 1]
+    referrers = [r for r in rows if r["trusted"] == 0]
+    base = {"available": True, "capability": cap, "state": state, "n_dest": len(dests),
+            "n_referrer": len(referrers), "sites": []}
+    if not dests or not referrers:
+        return base
+
+    for d in dests:
+        d["deg"] = 0
+    for r in referrers:
+        rl, ro = float(r["latitude"]), float(r["longitude"])
+        best, bd = None, None
+        for d in dests:
+            dd = (float(d["latitude"]) - rl) ** 2 + (float(d["longitude"]) - ro) ** 2
+            if bd is None or dd < bd:
+                bd, best = dd, d
+        r["_curkm"] = bd ** 0.5 * 111
+        r["_curdest"] = best["id"]
+        best["deg"] += 1
+    choke = max(dests, key=lambda d: d["deg"])
+
+    # candidates = existing facilities with REAL infrastructure to host the capability:
+    # a hospital-type with beds on record (you can't stand up an ICU in a 0-bed clinic or
+    # a homoeopathic college). What you'd actually resource — biggest first.
+    cands = [r for r in referrers
+             if (r["beds"] or 0) > 0 and (r["facility_type"] or "").lower() in _HOSPITAL_TYPES]
+    cands.sort(key=lambda r: -(r["beds"] or 0))
+    cands = cands[:max_candidates]
+
+    out = []
+    for cand in cands:
+        cl, co = float(cand["latitude"]), float(cand["longitude"])
+        captured, km_saved, relief = 0, 0.0, 0
+        for r in referrers:
+            if r["id"] == cand["id"]:
+                captured += 1
+                km_saved += r["_curkm"]
+                relief += 1 if r["_curdest"] == choke["id"] else 0
+                continue
+            dnew = ((float(r["latitude"]) - cl) ** 2 + (float(r["longitude"]) - co) ** 2) ** 0.5 * 111
+            if dnew < r["_curkm"]:
+                captured += 1
+                km_saved += r["_curkm"] - dnew
+                relief += 1 if r["_curdest"] == choke["id"] else 0
+        if captured > 0:
+            out.append({"id": cand["id"], "name": cand["name"], "city": cand["city"],
+                        "facility_type": cand["facility_type"], "beds": cand["beds"],
+                        "lat": round(cl, 4), "lon": round(co, 4),
+                        "captured": captured, "km_saved_total": round(km_saved),
+                        "km_saved_avg": round(km_saved / captured, 1), "relieves_choke": relief})
+    out.sort(key=lambda s: -s["km_saved_total"])
+    return {**base, "n_candidates": len(cands),
+            "choke": {"id": choke["id"], "name": choke["name"], "load": choke["deg"]},
+            "sites": out[:top]}
+
+
 def network_states(capability: str, limit: int = 14) -> list[dict]:
     """States with a meaningful referral funnel for C (enough referrers, few enough
     trusted destinations) — the picklist for the Care-Network view, worst funnel first."""

@@ -91,6 +91,14 @@ def referral_network(capability: str, state: str) -> dict:
     return db.referral_network(capability, state)
 
 
+def siting_impact(capability: str, state: str) -> dict:
+    """Mission-siting counterfactual over the referral network: rank existing facilities
+    by the impact of resourcing them to become a trusted `capability` destination —
+    referrers given a closer option, travel saved, and load pulled off the chokepoint.
+    Where to place the next specialist; the same tool the Care Network UI and a fleet call."""
+    return db.siting_impact(capability, state)
+
+
 # Tool registry — names → callables, used by mcp_server.py and the copilot trace.
 TOOLS = {
     "find_facilities": find_facilities,
@@ -100,4 +108,5 @@ TOOLS = {
     "under_immunized_districts": under_immunized_districts,
     "district_profile": district_profile,
     "referral_network": referral_network,
+    "siting_impact": siting_impact,
 }

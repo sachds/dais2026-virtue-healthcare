@@ -94,3 +94,60 @@ def network_analysis(capability: str, state: str) -> dict:
     net["skeptic"] = skeptic
     net["top"] = top
     return net
+
+
+def _synthesize_siting(cap: str, state: str, si: dict, top: dict) -> str:
+    relief = top.get("relieves_choke") or 0
+    choke_name = si.get("choke", {}).get("name", "")
+    impact = (f"If resourced as a trusted {cap.upper()} destination: {top['captured']} facilities gain a closer "
+              f"option, ~{top['km_saved_avg']} km saved each ({top['km_saved_total']} km total). ")
+    impact += (f"It pulls {relief} referrals off the current chokepoint {choke_name}."
+               if relief else
+               f"These facilities currently sit ~{top['km_saved_avg']} km from the nearest trusted {cap.upper()} — "
+               "an underserved cluster with no destination nearby.")
+    sys = ("You are a health-system planner advising where to place ONE new resource (a specialist team, ICU kit, "
+           "etc.) to relieve a referral bottleneck or reach an underserved cluster. In 2-3 sentences, make the "
+           "recommendation concretely — name the facility and what to resource, and the impact in facilities + km. "
+           "Use ONLY the facts given; do NOT claim the facilities route to a named chokepoint unless told so. This is "
+           "a supply/geography optimization; do not imply patient or outcome data.")
+    usr = (f"Capability: {cap.upper()} · State: {state}\n"
+           f"Recommended site: {top['name']} ({top.get('city') or ''}), {top.get('beds') or 0} beds.\n"
+           f"{impact}\nWrite the 2-3 sentence siting recommendation (plain text, no markdown).")
+    try:
+        return llm.chat([{"role": "system", "content": sys}, {"role": "user", "content": usr}], 360)
+    except Exception:
+        tail = (f"and pull {relief} referrals off {choke_name or 'the chokepoint'}"
+                if relief else f"reaching an underserved cluster ~{top['km_saved_avg']} km from the nearest {cap.upper()}")
+        return (f"Highest-impact intervention: resource a trusted {cap.upper()} at {top['name']}"
+                f"{(' (' + top['city'] + ')') if top.get('city') else ''}"
+                f"{(', ' + str(top['beds']) + ' beds') if top.get('beds') else ''}. It would give "
+                f"{top['captured']} facilities a closer {cap.upper()}, save ~{top['km_saved_avg']} km each, {tail}.")
+
+
+def siting_analysis(capability: str, state: str) -> dict:
+    """Phase 2 — the mission-siting optimizer over the network: rank existing facilities
+    by the counterfactual impact of resourcing them, and synthesize the recommendation."""
+    si = db.siting_impact(capability, state)
+    cap = si["capability"]
+    sites = si.get("sites", [])
+    trace = [{"step": "candidates", "role": "Planner", "tool": "siting_impact",
+              "detail": f"evaluated {si.get('n_candidates', 0)} existing {state} facilities as candidate "
+                        f"{cap.upper()} sites — counterfactual re-routing of {si.get('n_referrer', 0)} referrers"}]
+    if not sites:
+        si["trace"] = trace
+        si["recommendation"] = (f"No high-impact {cap.upper()} site found in {state} — too few referrers or "
+                                "destinations to optimize over.")
+        return si
+    top = sites[0]
+    trace.append({"step": "counterfactual", "role": "Optimizer", "tool": "re-route",
+                  "detail": f"best site {top['name']} → {top['captured']} facilities gain a closer {cap.upper()}, "
+                            f"~{top['km_saved_avg']} km saved each"})
+    if si.get("choke") and top.get("relieves_choke"):
+        trace.append({"step": "relief", "role": "Network analyst", "tool": "load-relief",
+                      "detail": f"pulls {top['relieves_choke']} referrals off the chokepoint {si['choke']['name']}"})
+    trace.append({"step": "synthesize", "role": "Composer", "model": MODEL,
+                  "detail": "wrote the siting recommendation"})
+    si["trace"] = trace
+    si["recommendation"] = _synthesize_siting(cap, state, si, top)
+    si["top"] = top
+    return si
