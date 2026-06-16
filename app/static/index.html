@@ -6,17 +6,18 @@
   <title>Medical Desert Planner — Facility Trust Desk</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <link rel="stylesheet" href="/static/styles.css?v=3"/>
+  <link rel="stylesheet" href="/static/styles.css?v=4"/>
 </head>
 <body>
   <header>
     <div class="logo">Medical <b>Desert Planner</b></div>
     <nav class="tabs">
-      <button class="tab active" data-view="desert">◧ Gap map</button>
+      <button class="tab active" data-view="home">⌂ Overview</button>
+      <button class="tab" data-view="desert">🗺 Gap map</button>
+      <button class="tab" data-view="publichealth">⚕ Public Health</button>
+      <button class="tab" data-view="network">⇄ Care Network</button>
       <button class="tab" data-view="trust">🏥 Trust Desk</button>
       <button class="tab" data-view="copilot">✦ Referral Copilot</button>
-      <button class="tab" data-view="network">⇄ Care Network</button>
-      <button class="tab" data-view="publichealth">⚕ Public Health</button>
       <button class="tab" data-view="readiness">✓ Data Readiness</button>
     </nav>
     <div class="spacer"></div>
@@ -24,10 +25,50 @@
   </header>
 
   <main>
+    <!-- Overview — the front door: one substrate, a decision at every scale -->
+    <section class="pane active" id="pane-home">
+      <div class="home-hero">
+        <h1>One trust substrate. A decision at every scale.</h1>
+        <p>Virtue Foundation gave us <b id="home-n">10,088</b> messy facility records — <b>claims to verify, not truth</b>. We turn them into evidence‑cited trust signals, and put the right decision tool in front of whoever's asking — from a single patient to a whole population.</p>
+        <div class="home-stats" id="home-stats"></div>
+      </div>
+      <div class="home-ladder">
+        <div class="scale-card pop" onclick="showView('desert')">
+          <span class="sc-scale">◷ Population</span>
+          <h3>Where's the danger?</h3>
+          <p>A planner finds the dangerous shortfalls — health burden × thin trusted supply — and runs immunization &amp; outbreak programs.</p>
+          <span class="sc-go">Gap map · Public Health →</span>
+        </div>
+        <div class="scale-card net" onclick="showView('network')">
+          <span class="sc-scale">⇄ Network</span>
+          <h3>How does care flow?</h3>
+          <p>An NGO coordinator sees the chokepoints a whole region depends on — then routes the load, schedules a mission circuit, or sites new capacity.</p>
+          <span class="sc-go">Care Network →</span>
+        </div>
+        <div class="scale-card fac" onclick="showView('trust')">
+          <span class="sc-scale">🏥 Facility</span>
+          <h3>Can I trust it?</h3>
+          <p>An analyst checks whether a facility can really do what it claims — every signal carries the exact cited evidence — and saves or overrides the call.</p>
+          <span class="sc-go">Trust Desk →</span>
+        </div>
+        <div class="scale-card pat" onclick="showView('copilot')">
+          <span class="sc-scale">✦ Patient</span>
+          <h3>Where do I send them?</h3>
+          <p>A provider gets a governed referral — capability, a procedure ranking, a care team — with a referral note to hand over.</p>
+          <span class="sc-go">Referral Copilot →</span>
+        </div>
+      </div>
+      <div class="home-foundation" onclick="showView('readiness')">
+        <span class="sc-scale">▾ Foundation</span>
+        <span><b>How much can you trust any of this?</b> The data is claims to verify — see what's sparse, what's weak, and the records that most need a human.</span>
+        <span class="sc-go">Data Readiness →</span>
+      </div>
+    </section>
+
     <!-- Track 2 — Medical Desert Planner -->
-    <section class="pane active" id="pane-desert">
+    <section class="pane" id="pane-desert">
       <div class="pane-head">
-        <h1>Medical Desert Planner</h1>
+        <h1>Medical Desert Planner <span class="scale-pill pop">◷ Population scale</span></h1>
         <p>Where is the dangerous shortfall? Trusted supply × NFHS‑5 health burden, by state.</p>
       </div>
       <section class="panel"><div class="body" id="desert-body"><div class="empty">Loading the gap map…</div></div></section>
@@ -36,7 +77,7 @@
     <!-- Track 1 — Facility Trust Desk -->
     <section class="pane" id="pane-trust">
       <div class="pane-head">
-        <h1>Facility Trust Desk</h1>
+        <h1>Facility Trust Desk <span class="scale-pill fac">🏥 Facility scale</span></h1>
         <p>Can this facility do what it claims? Per‑capability trust signals with the exact source text quoted.</p>
       </div>
       <div class="controls">
@@ -76,7 +117,7 @@
     <!-- Track 3 — Referral Copilot -->
     <section class="pane" id="pane-copilot">
       <div class="pane-head">
-        <h1>Referral Copilot</h1>
+        <h1>Referral Copilot <span class="scale-pill pat">✦ Patient scale</span></h1>
         <p>A provider's referral tool. Where to send this patient — capability, a procedure‑specific ranking, and a referral note — shown with its work and what it refused.</p>
       </div>
       <div class="copilot">
@@ -102,7 +143,7 @@
     <!-- Care Network — coordinated Copilot instances → the system view -->
     <section class="pane" id="pane-network">
       <div class="pane-head">
-        <h1>Care Network</h1>
+        <h1>Care Network <span class="scale-pill net">⇄ Network scale</span></h1>
         <p>Coordinate a Copilot instance from every facility — then see the chokepoints the whole region depends on, and where the network has no fallback.</p>
       </div>
       <div class="nw-bar">
@@ -125,7 +166,7 @@
     <!-- Public Health — population-scale agents -->
     <section class="pane" id="pane-publichealth">
       <div class="pane-head">
-        <h1>Public Health</h1>
+        <h1>Public Health <span class="scale-pill pop">◷ Population scale</span></h1>
         <p>Population‑scale agents over NFHS‑5 demand × supply — target under‑immunized districts, and plan outbreak isolation.</p>
       </div>
       <div class="ph-modes">
@@ -142,13 +183,13 @@
     <!-- Track 4 — Data Readiness Desk -->
     <section class="pane" id="pane-readiness">
       <div class="pane-head">
-        <h1>Data Readiness Desk</h1>
+        <h1>Data Readiness Desk <span class="scale-pill found">▾ Foundation</span></h1>
         <p>The data is claims to verify, not truth. What to fix first — and the records that most need a human.</p>
       </div>
       <div id="readiness-body"><div class="empty">Profiling the dataset…</div></div>
     </section>
   </main>
 
-  <script src="/static/app.js?v=3"></script>
+  <script src="/static/app.js?v=4"></script>
 </body>
 </html>

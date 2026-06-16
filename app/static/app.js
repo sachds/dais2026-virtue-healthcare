@@ -30,7 +30,8 @@ function activate(name){
 }
 function showView(name){
   activate(name);
-  if(name==="desert") showDesert();
+  if(name==="home") showHome();
+  else if(name==="desert") showDesert();
   else if(name==="readiness") showReadiness();
   else if(name==="network") showNetwork();
   else if(name==="publichealth") showPublicHealth();
@@ -39,13 +40,22 @@ function showView(name){
 }
 document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>showView(t.dataset.view));
 
+// Overview landing — fills the substrate stats; the scale cards route via showView()
+function showHome(){
+  const el=$("home-stats"); if(!el) return;
+  const f=OV.facilities||0, s=OV.scored||0, pct=f?Math.round(100*s/f):0;
+  if($("home-n")) $("home-n").textContent=f.toLocaleString();
+  el.innerHTML = `<span class="hs"><b>${f.toLocaleString()}</b> facility records</span>
+    <span class="hs"><b>${s.toLocaleString()}</b> evaluated for trust <span class="muted">(${pct}%)</span></span>
+    <span class="hs"><b>${(OV.caps||[]).length||6}</b> capabilities, each cited</span>`;
+}
 async function init(){
   OV = await (await fetch("/api/overview")).json();
   $("status").innerHTML = `<b>${OV.facilities?.toLocaleString()||0}</b> facilities · <b>${OV.scored?.toLocaleString()||0}</b> scored`;
   const st = await (await fetch("/api/states")).json();
   for(const s of st.states||[]){const o=document.createElement("option");o.value=s;o.textContent=s;$("state").appendChild(o);}
   loadShortlist();
-  showView("desert");
+  showView("home");
 }
 
 // ---- Track 2: Medical Desert gap map ------------------------------------- //
