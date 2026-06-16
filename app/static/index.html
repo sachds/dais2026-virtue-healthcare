@@ -6,7 +6,7 @@
   <title>Care Compass — trusted healthcare decisions at every scale</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <link rel="stylesheet" href="/static/styles.css?v=6"/>
+  <link rel="stylesheet" href="/static/styles.css?v=8"/>
 </head>
 <body>
   <header>
@@ -167,17 +167,10 @@
     <section class="pane" id="pane-publichealth">
       <div class="pane-head">
         <h1>Public Health <span class="scale-pill pop">◷ Population scale</span></h1>
-        <p>Population‑scale agents over NFHS‑5 demand × supply — target under‑immunized districts, and plan outbreak isolation.</p>
-      </div>
-      <div class="ph-modes">
-        <div class="seg">
-          <button class="seg-btn active" data-phm="immun" onclick="setPhMode('immun')">💉 Immunization campaign</button>
-          <button class="seg-btn" data-phm="burden" onclick="setPhMode('burden')">📊 Disease burden</button>
-          <button class="seg-btn" data-phm="outbreak" onclick="setPhMode('outbreak')">🦠 Outbreak response</button>
-        </div>
+        <p>Three agents over NFHS‑5 demand × our trusted supply — benchmark disease burden, target under‑immunized districts, and contain outbreaks.</p>
       </div>
       <div id="ph-controls"></div>
-      <section class="panel"><div class="body" id="ph-body"><div class="empty">Find the under‑immunized districts and draft a campaign.</div></div></section>
+      <section class="panel"><div class="body" id="ph-body"><div class="empty">Loading the public‑health agents…</div></div></section>
     </section>
 
     <!-- Track 4 — Data Readiness Desk -->
@@ -190,6 +183,6 @@
     </section>
   </main>
 
-  <script src="/static/app.js?v=6"></script>
+  <script src="/static/app.js?v=8"></script>
 </body>
 </html>

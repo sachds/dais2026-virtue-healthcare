@@ -859,17 +859,54 @@ function setPhMode(m){
   document.querySelectorAll('[data-phm]').forEach(b=>b.classList.toggle('active', b.dataset.phm===m));
   setPhControls();
   if(m==='burden'){ showBurden(); return; }
-  $("ph-body").innerHTML = `<div class="empty">${m==='immun'?'Find the under‑immunized districts and draft a campaign.':'Enter a district + disease to draft an isolation protocol.'}</div>`;
+  $("ph-body").innerHTML = `<div class="empty">${m==='immun'
+    ? 'Leave the district blank and hit Plan campaign to rank the worst‑immunized districts that have local supply — or name one.'
+    : 'Name a district + disease, then Plan response — the agent designates isolation facilities from local capacity.'}</div>`;
 }
 window.setPhMode = setPhMode;
 function setPhControls(){
+  const back = `<button class="ph-back" onclick="showPublicHealth()">‹ all agents</button>`;
   if(PH_MODE==='immun')
-    $("ph-controls").innerHTML = `<div class="ph-bar"><input id="ph-region" placeholder="District (optional — leave blank for worst nationwide)"/><button class="btn" onclick="runImmun()">💉 Plan campaign</button></div>`;
+    $("ph-controls").innerHTML = `<div class="ph-bar">${back}<input id="ph-region" placeholder="District (optional — blank = worst nationwide)"/><button class="btn" onclick="runImmun()">💉 Plan campaign</button></div>`;
   else if(PH_MODE==='outbreak')
-    $("ph-controls").innerHTML = `<div class="ph-bar"><input id="ph-oregion" placeholder="District (e.g. Jhansi)"/><input id="ph-disease" placeholder="Disease (e.g. measles)"/><button class="btn" onclick="runOutbreak()">🦠 Plan response</button></div>`;
-  else $("ph-controls").innerHTML = "";
+    $("ph-controls").innerHTML = `<div class="ph-bar">${back}<input id="ph-oregion" placeholder="District (e.g. Jhansi)"/><input id="ph-disease" placeholder="Disease (e.g. measles)"/><button class="btn" onclick="runOutbreak()">🦠 Plan response</button></div>`;
+  else
+    $("ph-controls").innerHTML = `<div class="ph-bar">${back}</div>`;
 }
-function showPublicHealth(){ setPhControls(); }
+// Public Health landing — a chooser of the three population-scale agents + a live NFHS at-a-glance
+async function showPublicHealth(){
+  document.querySelectorAll('[data-phm]').forEach(b=>b.classList.remove('active'));
+  $("ph-controls").innerHTML = "";
+  $("ph-body").innerHTML = `
+    <div class="ph-home">
+      <div id="ph-glance" class="ph-glance"></div>
+      <div class="ph-cards">
+        <div class="ph-card" onclick="setPhMode('immun')">
+          <div class="ph-card-i">💉</div><h3>Immunization campaign</h3>
+          <p>Find the lowest‑coverage districts that <b>also have local supply</b> to run it — then draft the campaign + health‑department referral.</p>
+          <span class="ph-go">Plan a campaign →</span>
+        </div>
+        <div class="ph-card" onclick="setPhMode('burden')">
+          <div class="ph-card-i">📊</div><h3>Disease burden</h3>
+          <p>Benchmark prevalence — diabetes, hypertension, anaemia, stunting — by district vs the national baseline, and <b>escalate the worst</b> to WHO / UNICEF / government.</p>
+          <span class="ph-go">See the benchmarks →</span>
+        </div>
+        <div class="ph-card" onclick="setPhMode('outbreak')">
+          <div class="ph-card-i">🦠</div><h3>Outbreak response</h3>
+          <p>Given a district + disease, <b>designate isolation facilities</b> from local capacity and brief each provider with targeted outreach.</p>
+          <span class="ph-go">Plan a response →</span>
+        </div>
+      </div>
+    </div>`;
+  try{
+    const b = await (await fetch('/api/publichealth/benchmarks')).json();
+    const g = $("ph-glance");
+    if(b && b.available && g){
+      g.innerHTML = `<span class="phg-lbl">NFHS‑5 national baselines</span>` +
+        (b.conditions||[]).map(c=>`<span class="phg"><b>${c.national}%</b> ${esc((c.label.split('—')[0]||'').replace(/\s*\(.*$/,'').trim())}</span>`).join("");
+    }
+  }catch(e){}
+}
 async function showBurden(){
   $("ph-body").innerHTML = `<div class="empty">Benchmarking disease prevalence across districts…</div>`;
   const b = await (await fetch("/api/publichealth/benchmarks")).json();
