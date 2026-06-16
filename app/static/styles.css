@@ -1,0 +1,135 @@
+:root{
+  --bg:#f6f8fb; --panel:#ffffff; --ink:#172033; --muted:#64748b; --line:#e6eaf0;
+  --blue:#2563eb; --blue-soft:#eff4ff;
+  --strong:#059669; --strong-bg:#e7f7f0;
+  --partial:#d97706; --partial-bg:#fdf3e6;
+  --weak:#dc2626;    --weak-bg:#fdeceb;
+  --none:#94a3b8;    --none-bg:#f1f5f9;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font:14.5px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+button{font:inherit;cursor:pointer}
+a{color:var(--blue);text-decoration:none}
+
+header{display:flex;align-items:center;gap:14px;padding:12px 22px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+header .logo{font-weight:800;letter-spacing:-.2px}
+header .logo b{color:var(--blue)}
+header .tag{color:var(--muted);font-size:13px}
+header .spacer{flex:1}
+header .status{color:var(--muted);font-size:12.5px}
+header .status b{color:var(--ink)}
+
+.controls{display:flex;gap:10px;flex-wrap:wrap;padding:12px 22px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:53px;z-index:4}
+.controls input,.controls select{padding:8px 11px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink);font:inherit}
+.controls input{min-width:280px}
+.controls .hint{color:var(--muted);font-size:12px;align-self:center}
+
+main{display:grid;grid-template-columns:minmax(330px,420px) 1fr;gap:16px;padding:16px 22px;align-items:start}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px}
+.panel h2{margin:0;padding:12px 16px;font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);border-bottom:1px solid var(--line)}
+.panel .body{padding:10px 14px;max-height:78vh;overflow:auto}
+
+/* facility list */
+.fac{padding:11px 12px;border:1px solid var(--line);border-radius:11px;margin-bottom:9px;cursor:pointer;transition:.12s}
+.fac:hover{border-color:#c9d6ea;background:#fbfdff}
+.fac.sel{border-color:var(--blue);background:var(--blue-soft)}
+.fac .nm{font-weight:650}
+.fac .meta{color:var(--muted);font-size:12.5px;margin-top:2px}
+.fac .row{display:flex;gap:6px;align-items:center;margin-top:7px;flex-wrap:wrap}
+.chip{font-size:11px;padding:1px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);background:#fff;white-space:nowrap}
+
+/* signal badge */
+.sig{font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px;text-transform:capitalize}
+.sig.strong{color:var(--strong);background:var(--strong-bg)}
+.sig.partial{color:var(--partial);background:var(--partial-bg)}
+.sig.weak{color:var(--weak);background:var(--weak-bg)}
+.sig.none{color:var(--none);background:var(--none-bg)}
+
+/* overview grid */
+.grid{width:100%;border-collapse:collapse;font-size:13px}
+.grid th,.grid td{padding:8px 10px;text-align:center;border-bottom:1px solid var(--line)}
+.grid th:first-child,.grid td:first-child{text-align:left;text-transform:capitalize;font-weight:600}
+.grid td .n{font-weight:700}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
+
+/* facility detail */
+.fac-head{padding:16px}
+.fac-head .nm{font-size:20px;font-weight:750}
+.fac-head .meta{color:var(--muted);margin-top:3px}
+.fac-head .links{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}
+
+.cap{border:1px solid var(--line);border-radius:12px;margin:0 16px 12px;overflow:hidden}
+.cap .top{display:flex;align-items:center;gap:10px;padding:11px 14px;background:#fbfcfe;border-bottom:1px solid var(--line)}
+.cap .cap-name{font-weight:700;text-transform:capitalize}
+.cap .conf{margin-left:auto;display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}
+.conf-bar{width:84px;height:6px;border-radius:4px;background:#eef2f7;overflow:hidden}
+.conf-bar i{display:block;height:100%;background:var(--blue)}
+.cap .inner{padding:12px 14px}
+.rationale{color:#33415c;margin-bottom:9px}
+.evidence-lbl{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin-bottom:5px}
+.ev{border-left:3px solid #d7e0ee;padding:5px 0 5px 11px;margin-bottom:7px}
+.ev .field{font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--blue);font-weight:700}
+.ev .snip{color:#28324a}
+.no-ev{color:var(--muted);font-style:italic;font-size:13px}
+
+.override{display:flex;align-items:center;gap:7px;margin-top:11px;padding-top:10px;border-top:1px dashed var(--line);flex-wrap:wrap}
+.override .lbl{font-size:12px;color:var(--muted)}
+.ov-btn{font-size:11.5px;padding:3px 10px;border-radius:999px;border:1px solid var(--line);background:#fff;color:var(--muted)}
+.ov-btn:hover{border-color:#c9d6ea}
+.ov-btn.act{border-color:var(--blue);color:var(--blue);background:var(--blue-soft);font-weight:700}
+.ov-note{font-size:12px;color:var(--partial)}
+
+.actions{padding:14px 16px;border-top:1px solid var(--line);display:flex;gap:10px;flex-wrap:wrap}
+textarea{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font:inherit;resize:vertical;min-height:38px}
+.btn{background:var(--blue);color:#fff;border:0;border-radius:9px;padding:8px 15px;font-weight:650}
+.btn.ghost{background:#fff;color:var(--blue);border:1px solid var(--line)}
+.empty{color:var(--muted);text-align:center;padding:30px 12px}
+
+/* Referral Copilot */
+.copilot{padding:14px 22px;background:linear-gradient(180deg,#eef5ff,#f6f8fb);border-bottom:1px solid var(--line)}
+.cp-row{display:flex;gap:10px;align-items:center}
+.cp-icon{color:var(--blue);font-size:18px}
+.cp-row input{flex:1;padding:11px 13px;border:1px solid #cdddf5;border-radius:10px;font:inherit;background:#fff}
+.cp-ex{color:var(--muted);font-size:12px;margin-top:7px}
+.cp-ex span{color:var(--blue);cursor:pointer;border-bottom:1px dashed #b9cdeb}
+.cp-plan{font-size:12px;color:var(--muted);padding:14px 16px 0}
+.cp-plan b{color:var(--ink)}
+.cp-answer{padding:9px 16px 4px;font-size:15px;line-height:1.55;color:#1f2a40}
+.cp-card{margin:8px 16px;padding:11px 13px;border:1px solid var(--line);border-radius:11px;cursor:pointer}
+.cp-card:hover{border-color:#c9d6ea;background:#fbfdff}
+.cp-card .nm{font-weight:650}
+.cp-card .why{color:#33415c;font-size:13px;margin-top:3px}
+.cp-card .caution{color:var(--weak);font-size:12.5px;margin-top:5px}
+
+/* Track 2 — gap map */
+.navbtn{background:#fff;border:1px solid var(--line);border-radius:9px;padding:6px 12px;color:var(--blue);font-weight:600}
+.navbtn:hover{border-color:#c9d6ea}
+.legend{display:flex;gap:12px;align-items:center;color:var(--muted);font-size:12px;padding:12px 16px 2px;flex-wrap:wrap}
+.legend .cell{display:inline-block;width:18px;height:14px;margin:0 1px 0 0;border-radius:4px;line-height:14px}
+.heatwrap{overflow:auto;padding:8px 14px}
+table.heat{border-collapse:collapse;width:100%;font-size:12px}
+table.heat th{padding:6px 4px;text-transform:capitalize;color:var(--muted);font-weight:600;text-align:center;border-bottom:1px solid var(--line)}
+table.heat th:first-child{text-align:left}
+table.heat td{padding:1px;text-align:center}
+td.st{padding:5px 8px;font-weight:600;white-space:nowrap;text-align:left}
+td.st .muted{font-weight:400;font-size:11px}
+.cell{display:block;height:26px;line-height:26px;border-radius:6px;cursor:pointer;font-weight:700;font-size:11.5px;color:#fff;min-width:34px}
+.cell.served{background:#34a877}
+.cell.gap{background:#e0564f}
+.cell.datapoor{background:#e3e9f0;color:#90a2b5}
+.cell:hover{outline:2px solid var(--blue);outline-offset:-2px}
+.gaprow{padding:9px 16px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13.5px}
+.gaprow:hover{background:#fbfdff}
+.muted{color:var(--muted)}
+
+/* Track 4 — data readiness */
+.cov-row{display:flex;align-items:center;gap:10px;padding:3px 16px}
+.cov-f{width:130px;text-transform:capitalize;font-size:13px;color:#33415c}
+.cov-bar{flex:1;height:9px;background:#eef2f7;border-radius:5px;overflow:hidden;max-width:380px}
+.cov-bar i{display:block;height:100%}
+.cov-p{width:42px;text-align:right;font-size:12px;color:var(--muted)}
+.qrow{padding:9px 16px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13.5px}
+.qrow:hover{background:#fbfdff}
+.banner{background:#fffbe9;border:1px solid #f3e2a8;color:#7a5b08;font-size:12.5px;padding:8px 14px;margin:0 16px 12px;border-radius:9px}
