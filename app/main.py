@@ -125,6 +125,16 @@ async def ph_benchmarks():
     return JSONResponse(await asyncio.to_thread(db.disease_benchmarks))
 
 
+@app.post("/api/publichealth/provider_outreach")
+async def ph_provider_outreach(payload: dict):
+    fid = (payload.get("facility_id") or "").strip()
+    if not fid:
+        return JSONResponse({"error": "facility_id required"}, status_code=400)
+    from app import publichealth as ph
+    return JSONResponse(await asyncio.to_thread(
+        ph.provider_outreach, fid, payload.get("region", ""), payload.get("disease", "")))
+
+
 @app.post("/api/publichealth/escalate")
 async def ph_escalate(payload: dict):
     region = (payload.get("district") or "").strip()

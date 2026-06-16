@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 
-from app import agent_tools, llm
+from app import agent_tools, db, llm
 
 MODEL = llm.ENDPOINT
 
@@ -146,4 +146,45 @@ def outbreak_protocol(region: str, disease: str) -> dict:
     trace.append({"step": "plan", "role": "Protocol", "model": MODEL,
                   "detail": "drafted isolation + containment protocol"})
     return {"mode": "outbreak", "region": region, "disease": disease, "trace": trace,
-            "profile": prof, "plan": plan}
+            "profile": prof, "plan": plan, "providers": db.providers_in_region(region)}
+
+
+def _reason_provider_outreach(card: dict, region: str, disease: str) -> str:
+    brief = {"facility": card["name"], "type": card["type"], "beds": card.get("beds"),
+             "physicians": card.get("doctors"), "service_lines": card.get("services"),
+             "district": card.get("district") or region}
+    sys = ("You are a public-health outreach coordinator activating a specific provider during a suspected outbreak. "
+           "Draft a PROVIDER-SPECIFIC brief, grounded in THIS facility's capacity (beds, physicians, service lines). "
+           "Use these short headed sections with bullets (NO tables): "
+           "1) OUTBREAK ALERT — what's happening in the region and why it matters to this provider; "
+           "2) YOUR ROLE & RESOURCES — what THIS facility should do given its capacity (isolation beds / triage / "
+           "referral / vaccination) and what it has to work with; "
+           "3) HEALTH DEPARTMENT — the body to coordinate with and report to (district/state Health Department, IDSP); "
+           "4) CLINICAL EDUCATION — the guidance to use (e.g. WHO / national guidelines for this disease, case definition); "
+           "5) RESPONSE PROTOCOL — the immediate containment steps; "
+           "6) COMMUNITY HEALTH WORKERS — how to mobilize the local ASHA / ANM workers in this facility's community for "
+           "case-finding, contact tracing, and awareness. Invent no numbers. Note that detection needs a surveillance feed "
+           "(this responds to a reported signal).")
+    usr = (f"Suspected outbreak: {disease} in {region}.\nProvider to activate:\n{json.dumps(brief, ensure_ascii=False)}\n\n"
+           "Draft the provider-specific outreach brief.")
+    try:
+        return llm.chat([{"role": "system", "content": sys}, {"role": "user", "content": usr}], 850)
+    except Exception:
+        return (f"OUTBREAK ALERT: suspected {disease} in {region}. {card['name']} ({card['type']}, "
+                f"{card.get('beds') or 0} beds, {card.get('doctors') or 0} physicians) — set up triage + isolation per "
+                f"capacity, coordinate with and report to the district/state Health Department and IDSP, follow WHO "
+                f"{disease} guidance, and mobilize local ASHA/ANM workers for case-finding, contact tracing, and awareness.")
+
+
+def provider_outreach(facility_id: str, region: str, disease: str) -> dict:
+    region, disease = (region or "").strip(), (disease or "disease").strip()
+    card = db.provider_card(facility_id)
+    if not card:
+        return {"error": "facility not found"}
+    trace = [{"step": "profile", "role": "Profiler", "tool": "provider_card",
+              "detail": f"{card['name']} — {card['type']}, {card.get('beds') or '?'} beds, {card.get('doctors') or '?'} physicians"}]
+    plan = _reason_provider_outreach(card, region, disease)
+    trace.append({"step": "draft", "role": "Outreach coordinator", "model": MODEL,
+                  "detail": "drafted provider-specific outreach — alert · role · health dept · education · protocol · CHWs"})
+    return {"facility_id": facility_id, "card": card, "region": region, "disease": disease,
+            "trace": trace, "plan": plan}

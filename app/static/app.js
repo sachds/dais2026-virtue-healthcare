@@ -613,18 +613,50 @@ function renderImmun(r){
     <div class="evidence-lbl" style="margin:14px 16px 4px">Campaign plan</div>
     <div class="ph-plan">${mdLite(r.plan||'')}</div>`;
 }
+let _outbreak = {region:"", disease:""};
 function renderOutbreak(r){
+  _outbreak = {region:r.region||"", disease:r.disease||""};
   const trace = (r.trace||[]).map(traceStep).join("");
   const sup = (r.profile&&r.profile.supply)||{};
-  const top = (r.profile&&r.profile.top_facilities)||[];
-  const caps = top.map(t=>`<span class="chip">${esc(t.name)} · ${t.total_beds||0} beds</span>`).join(" ");
+  const providers = (r.providers||[]).map(p=>`
+    <div class="prov-row">
+      <span><b>${esc(p.name||'')}</b> <span class="muted">${esc(p.facility_type||'')}${p.total_beds?' · '+p.total_beds+' beds':''}${p.n_doctors?' · '+p.n_doctors+' physicians':''}</span></span>
+      <button class="bm-esc" style="color:var(--blue);background:var(--blue-soft);border-color:#cdddf5" onclick="runProviderOutreach('${esc(p.facility_id)}')">📣 Brief this provider</button>
+    </div>`).join("");
   $("ph-body").innerHTML = `
     <div class="cp-plan"><b>Outbreak signal:</b> ${esc(r.disease||'disease')} in <b>${esc(r.region||'')}</b> · local capacity: ${sup.hospitals||0} hospitals · ${sup.beds||0} beds · ${sup.physicians||0} physicians</div>
     <div class="evidence-lbl" style="margin:12px 16px 4px">Agent — assess → protocol</div>
     <div class="cp-trace">${trace}</div>
-    ${caps?`<div style="padding:2px 16px 0">${caps}</div>`:''}
     <div class="evidence-lbl" style="margin:12px 16px 4px">Isolation &amp; containment protocol</div>
-    <div class="ph-plan">${mdLite(r.plan||'')}</div>`;
+    <div class="ph-plan">${mdLite(r.plan||'')}</div>
+    ${providers?`<div class="evidence-lbl" style="margin:16px 16px 4px">Providers in ${esc(r.region||'')} — activate each with a targeted outreach</div>
+      <div style="padding:0 16px">${providers}</div>`:''}
+    <div id="provider-outreach"></div>`;
+}
+async function runProviderOutreach(fid){
+  const el=$("provider-outreach"); if(!el) return;
+  showLoading("provider-outreach", ["Profiling the provider","Drafting the outreach (alert · resources · CHWs)"], "Provider outreach agent");
+  el.scrollIntoView({behavior:"smooth", block:"center"});
+  try{
+    const r=await (await fetch("/api/publichealth/provider_outreach",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({facility_id:fid, region:_outbreak.region, disease:_outbreak.disease})})).json();
+    stopLoading(); renderProviderOutreach(r);
+  }catch(e){ stopLoading(); el.innerHTML=`<div class="empty">Outreach error: ${esc(e.message)}</div>`; }
+}
+window.runProviderOutreach = runProviderOutreach;
+function renderProviderOutreach(r){
+  const trace=(r.trace||[]).map(traceStep).join("");
+  const c=r.card||{};
+  const meta=[c.type, c.beds?c.beds+' beds':null, c.doctors?c.doctors+' physicians':null, (c.services&&c.services.length)?c.services.join(', '):null].filter(Boolean).join(' · ');
+  $("provider-outreach").innerHTML=`
+    <section class="panel" style="margin-top:14px">
+      <h2>📣 Provider outreach — ${esc(c.name||'')}</h2>
+      <div class="body">
+        <div class="cp-plan">${esc(meta)}</div>
+        <div class="cp-trace">${trace}</div>
+        <div class="ph-plan">${mdLite(r.plan||'')}</div>
+      </div>
+    </section>`;
+  $("provider-outreach").scrollIntoView({behavior:"smooth", block:"start"});
 }
 
 window.selectFacility=selectFacility;window.override=override;window.addNote=addNote;window.shortlistFac=shortlistFac;

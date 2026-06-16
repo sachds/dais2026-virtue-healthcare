@@ -208,6 +208,8 @@ td.st .muted{font-weight:400;font-size:11px}
 .ph-plan h3{font-size:15px;margin:14px 0 6px;font-weight:750}
 .ph-plan h4{font-size:13.5px;margin:11px 0 4px;color:#33415c;font-weight:700}
 .ph-plan b{color:var(--ink)}
+.prov-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+.prov-row:last-child{border-bottom:0}
 .bm-row{display:flex;align-items:center;gap:12px;padding:7px 0;border-bottom:1px solid var(--line)}
 .bm-row:last-child{border-bottom:0}
 .bm-d{flex:0 0 210px;font-weight:600;font-size:13.5px}

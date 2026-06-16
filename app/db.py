@@ -627,6 +627,40 @@ def district_profile(district: str) -> dict:
     return {"district": district, "dkey": dk, "nfhs": nfhs, "supply": supply, "top_facilities": top}
 
 
+def providers_in_region(district: str, limit: int = 12) -> list[dict]:
+    """The providers in a district — who to target with an outbreak-response outreach,
+    biggest-capacity first."""
+    dk = _dkey(district)
+    with _conn() as c, c.cursor() as cur:
+        try:
+            cur.execute(
+                """SELECT fs.facility_id, f.name, fs.facility_type, fs.total_beds, fs.n_doctors, f.city
+                   FROM facility_services fs JOIN facilities f ON f.id = fs.facility_id
+                   WHERE fs.district = %s
+                   ORDER BY coalesce(fs.total_beds,0) DESC, coalesce(fs.n_doctors,0) DESC LIMIT %s""",
+                (dk, limit))
+            return cur.fetchall()
+        except Exception:  # noqa: BLE001
+            return []
+
+
+def provider_card(facility_id: str) -> dict | None:
+    """One provider's profile (name, type, capacity, service lines) for the outreach agent."""
+    with _conn() as c, c.cursor() as cur:
+        cur.execute(
+            """SELECT f.name, f.city, f.state, fs.facility_type, fs.district, fs.total_beds,
+                      fs.n_doctors, fs.services
+               FROM facility_services fs JOIN facilities f ON f.id = fs.facility_id
+               WHERE fs.facility_id = %s LIMIT 1""", (facility_id,))
+        r = cur.fetchone()
+    if not r:
+        return None
+    svc = r["services"] or {}
+    offered = [SERVICE_LABEL[k] for k in SERVICE_CATS if (svc.get(k) or {}).get("offered")]
+    return {"name": r["name"], "city": r["city"], "state": r["state"], "type": r["facility_type"],
+            "district": r["district"], "beds": r["total_beds"], "doctors": r["n_doctors"], "services": offered}
+
+
 def district_supply(capability: str = "any") -> dict:
     """District-level trusted supply with geographic centroids — for the desert MAP.
     Each district: centroid (avg facility lat/long), facility count, and whether it has
