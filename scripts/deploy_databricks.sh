@@ -14,7 +14,7 @@ echo "▶ staging…"
 STAGE=/tmp/trustdesk-deploy; rm -rf "$STAGE"; mkdir -p "$STAGE/app"
 cp -r app/main.py app/db.py app/static "$STAGE/app/"
 printf 'fastapi>=0.115\nuvicorn[standard]>=0.30\npsycopg[binary]>=3.2\ndatabricks-sdk>=0.30\n' > "$STAGE/requirements.txt"
-cp -r app/llm.py app/copilot.py app/agent_tools.py "$STAGE/app/"
+cp -r app/llm.py app/copilot.py app/agent_tools.py app/policy.py "$STAGE/app/"
 python3 - "$LAKEBASE_URL" > "$STAGE/app.yaml" <<'PY'
 import sys
 print('command:')
