@@ -101,7 +101,23 @@ textarea{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 1
 .cp-card:hover{border-color:#c9d6ea;background:#fbfdff}
 .cp-card .nm{font-weight:650}
 .cp-card .why{color:#33415c;font-size:13px;margin-top:3px}
-.cp-card .caution{color:var(--weak);font-size:12.5px;margin-top:5px}
+.cp-card .caution{color:var(--partial);font-size:12.5px;margin-top:5px}
+.cp-card-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+/* agent trace — show the work */
+.cp-trace{margin:0 16px 8px;border-left:2px solid var(--line);padding-left:0}
+.tr-step{display:flex;align-items:baseline;gap:8px;padding:4px 0 4px 14px;position:relative;font-size:12.5px}
+.tr-step::before{content:"";position:absolute;left:-5px;top:10px;width:8px;height:8px;border-radius:50%;background:var(--blue)}
+.tr-role{font-weight:700;color:var(--ink);min-width:88px}
+.tr-detail{color:#33415c;flex:1}
+.tr-prov{font-size:10.5px;color:var(--muted);font-family:ui-monospace,monospace;background:var(--none-bg);padding:1px 6px;border-radius:5px;white-space:nowrap}
+.tr-tool{font-size:10.5px;color:var(--blue);font-family:ui-monospace,monospace;background:var(--blue-soft);padding:1px 6px;border-radius:5px;white-space:nowrap}
+/* verdict badges */
+.vb{font-size:10.5px;font-weight:700;padding:1px 8px;border-radius:999px;white-space:nowrap}
+.vb.allow{color:var(--strong);background:var(--strong-bg)}
+.vb.flag{color:var(--partial);background:var(--partial-bg)}
+.vb.block{color:var(--weak);background:var(--weak-bg)}
+.cp-blocked{margin:6px 16px;padding:9px 12px;border:1px dashed #e6b3b0;border-radius:11px;background:#fdf7f7;font-size:13px}
+.cp-demand{margin:8px 16px;padding:8px 12px;background:var(--blue-soft);border-radius:9px;font-size:12.5px;color:#33415c}
 
 /* Track 2 — gap map */
 .navbtn{background:#fff;border:1px solid var(--line);border-radius:9px;padding:6px 12px;color:var(--blue);font-weight:600}

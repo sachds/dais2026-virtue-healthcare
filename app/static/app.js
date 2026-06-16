@@ -228,17 +228,34 @@ async function runCopilot(){
 function renderCopilot(r){
   const plan=r.plan||{};
   const chips=(plan.capabilities||[]).map(c=>`<span class="chip">${esc(c)}</span>`).join("")+(plan.location?` <span class="chip">📍 ${esc(plan.location)}</span>`:"");
+  const trace=(r.trace||[]).map(s=>{
+    const prov = s.model?`<span class="tr-prov">${esc(s.model)}</span>`:(s.tool?`<span class="tr-tool">${esc(s.tool)}</span>`:"");
+    return `<div class="tr-step"><span class="tr-role">${esc(s.role||s.step)}</span><span class="tr-detail">${esc(s.detail||"")}</span>${prov}</div>`;
+  }).join("");
+  const vbadge=(v)=> v==='flag' ? `<span class="vb flag">⚠ flagged</span>` : `<span class="vb allow">✓ vetted</span>`;
   const sl=(r.shortlist||[]).map(s=>`
     <div class="cp-card" onclick="selectFacility('${esc(s.id)}')">
-      <div class="nm">${esc(s.name||"")}</div>
+      <div class="cp-card-top">${vbadge(s.verdict)}<span class="nm">${esc(s.name||"")}</span>${s.cap?`<span class="chip">${esc(s.cap)}: ${esc(s.signal||'')}</span>`:""}</div>
       ${s.why?`<div class="why">${esc(s.why)}</div>`:""}
       ${s.caution?`<div class="caution">⚠ ${esc(s.caution)}</div>`:""}
     </div>`).join("");
+  const bl=(r.blocked||[]).map(b=>`
+    <div class="cp-blocked">
+      <span class="vb block">✗ blocked</span> <b>${esc(b.name||"")}</b>
+      <span class="muted">${esc([b.city,b.state].filter(Boolean).join(', '))}</span>
+      <div class="muted">${esc((b.reasons||[])[0]||"")}</div>
+    </div>`).join("");
+  const demand = (r.demand && r.demand.need_index!=null)
+    ? `<div class="cp-demand">📊 NFHS demand · <b>${esc(r.demand.state)}</b>: need ${r.demand.need_index} — ${r.demand.institutional_birth}% births in-facility, ${r.demand.insurance}% insured</div>` : "";
   $("detail").innerHTML=`
-    <div class="cp-plan"><b>Agent:</b> parsed need ${chips||'—'} · retrieved <b>${r.n_candidates||0}</b> evidence-backed candidates from Lakebase</div>
-    <div class="cp-answer">${esc(r.answer||"")}</div>
-    <div class="evidence-lbl" style="margin:14px 16px 4px">Shortlist — click any to see full cited evidence</div>
-    ${sl||'<div class="empty">No evidence-backed matches. Try a wider area.</div>'}`;
+    <div class="cp-plan"><b>Agent plan:</b> ${chips||'—'} · retrieved <b>${r.n_candidates||0}</b> evidence-backed candidates from Lakebase</div>
+    <div class="evidence-lbl" style="margin:12px 16px 4px">How the agent worked — plan → retrieve → scrutinize → challenge → govern → compose</div>
+    <div class="cp-trace">${trace}</div>
+    ${r.answer?`<div class="cp-answer">${esc(r.answer)}</div>`:""}
+    ${demand}
+    <div class="evidence-lbl" style="margin:14px 16px 4px">Recommended — vetted &amp; governed · click any for full cited evidence</div>
+    ${sl||'<div class="empty">No evidence-backed matches survived governance. Try a wider area.</div>'}
+    ${bl?`<div class="evidence-lbl" style="margin:16px 16px 4px">Not recommended — blocked by policy</div>${bl}`:''}`;
 }
 window.cpEx=(q)=>{$("cp-q").value=q;runCopilot();};
 $("cp-ask").onclick=runCopilot;
