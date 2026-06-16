@@ -81,30 +81,44 @@ function districtDrill(district, cap){
   updateHint(); loadFacilities(); window.scrollTo(0,0);
 }
 window.districtDrill = districtDrill;
+let _leaflet = null;
 function renderDesertMap(g){
   if(!g.available){ $("desert-view").innerHTML = `<div class="empty">District map needs the PIN bridge — run load_pincode.py.</div>`; return; }
   const ds = (g.districts||[]).filter(d=>d.lat&&d.lon);
-  const W=540, H=600, LAT0=6, LAT1=37, LON0=68, LON1=98;
-  const X=lon=>(lon-LON0)/(LON1-LON0)*W, Y=lat=>(LAT1-lat)/(LAT1-LAT0)*H;
-  const col={served:'#34a877', gap:'#e0564f', datapoor:'#cbd5e1'};
+  const col={served:'#2fa37a', gap:'#e0564f', datapoor:'#94a3b8'};
   const order={datapoor:0, served:1, gap:2};   // draw gaps/served on top of grey
   ds.sort((a,b)=>order[a.status]-order[b.status]);
   const counts={served:0, gap:0, datapoor:0}; ds.forEach(d=>counts[d.status]++);
-  const dots = ds.map(d=>{
-    const r = Math.max(2.5, Math.min(15, 2+Math.sqrt(d.n_fac)*1.1));
-    const detail = d.status==='served' ? `${d.trusted} trusted of ${d.n_fac} facilities`
-                  : (d.status==='gap' ? `GAP — 0 trusted of ${d.n_scored} evaluated` : `${d.n_fac} facilities · too few scored`);
-    return `<circle cx="${X(d.lon).toFixed(1)}" cy="${Y(d.lat).toFixed(1)}" r="${r.toFixed(1)}" fill="${col[d.status]}" fill-opacity="0.78" stroke="#fff" stroke-width="0.5" onclick="districtDrill('${esc(d.district).replace(/'/g,'')}','${esc(g.capability)}')"><title>${esc(d.district)}${d.state?', '+esc(d.state):''} — ${detail}</title></circle>`;
-  }).join("");
+  const radius=d=>Math.max(3, Math.min(18, 2+Math.sqrt(d.n_fac)*1.2));
+  const tip=d=> `${d.district}${d.state?', '+d.state:''} — ` + (d.status==='served' ? `${d.trusted} trusted of ${d.n_fac} facilities`
+                : (d.status==='gap' ? `GAP — 0 trusted of ${d.n_scored} evaluated` : `${d.n_fac} facilities · too few scored`));
   const capLbl = g.capability==='any' ? 'any capability' : g.capability.toUpperCase();
-  $("desert-view").innerHTML = `
+  const legend = `
     <p class="legend">
       <span class="dot2" style="background:${col.served}"></span> trusted supply (${counts.served})
       <span class="dot2" style="background:${col.gap}"></span> confirmed gap (${counts.gap})
       <span class="dot2" style="background:${col.datapoor}"></span> too few scored (${counts.datapoor})
       <span class="muted">· ${ds.length} districts · bubble = # facilities · <b>${capLbl}</b> · click to drill in</span>
-    </p>
-    <div class="mapwrap"><svg viewBox="0 0 ${W} ${H}" class="desertmap" preserveAspectRatio="xMidYMid meet">${dots}</svg></div>`;
+    </p>`;
+  if(window.L){                                   // real geographic map: color-coded deserts on OSM tiles
+    $("desert-view").innerHTML = legend + `<div id="dmap" class="dmap"></div>`;
+    if(_leaflet){ try{ _leaflet.remove(); }catch(e){} _leaflet=null; }
+    const map = L.map('dmap', {scrollWheelZoom:false});
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:11, attribution:'© OpenStreetMap'}).addTo(map);
+    ds.forEach(d=>{
+      L.circleMarker([d.lat, d.lon], {radius:radius(d), color:'#fff', weight:0.7, fillColor:col[d.status], fillOpacity:0.82})
+        .bindTooltip(tip(d)).on('click', ()=>districtDrill(d.district, g.capability)).addTo(map);
+    });
+    const b = ds.length ? L.latLngBounds(ds.map(d=>[d.lat, d.lon])) : null;
+    if(b) map.fitBounds(b, {padding:[16,16]}); else map.setView([22.6, 81], 4);
+    _leaflet = map;
+    setTimeout(()=>{ try{ map.invalidateSize(); if(b) map.fitBounds(b, {padding:[16,16]}); }catch(e){} }, 150);
+  } else {                                        // SVG fallback (no tiles / Leaflet blocked)
+    const W=540, H=600, LAT0=6, LAT1=37, LON0=68, LON1=98;
+    const X=lon=>(lon-LON0)/(LON1-LON0)*W, Y=lat=>(LAT1-lat)/(LAT1-LAT0)*H;
+    const dots = ds.map(d=>`<circle cx="${X(d.lon).toFixed(1)}" cy="${Y(d.lat).toFixed(1)}" r="${radius(d).toFixed(1)}" fill="${col[d.status]}" fill-opacity="0.8" stroke="#fff" stroke-width="0.5" onclick="districtDrill('${esc(d.district).replace(/'/g,'')}','${esc(g.capability)}')"><title>${esc(tip(d))}</title></circle>`).join("");
+    $("desert-view").innerHTML = legend + `<div class="mapwrap"><svg viewBox="0 0 ${W} ${H}" class="desertmap" preserveAspectRatio="xMidYMid meet">${dots}</svg></div>`;
+  }
 }
 function cellLabel(c){ return c.status==='served' ? String(c.trusted) : (c.status==='gap' ? '0' : '·'); }
 function cellBg(c){
