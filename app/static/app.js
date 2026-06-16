@@ -451,7 +451,7 @@ function refFromBanner(r){ return r.from_provider ? `<div class="ref-from">📋 
 function refNoteBlock(r){
   if(!r.from_provider || !r.referral_note) return "";
   _referralCtx = {from:r.from_provider.name, note:r.referral_note,
-    destId:(r.shortlist&&r.shortlist[0]&&r.shortlist[0].id) || (r.care_team&&r.care_team[0]&&r.care_team[0].facilities&&r.care_team[0].facilities[0]&&r.care_team[0].facilities[0].id) || null};
+    destId:(r.shortlist&&r.shortlist[0]&&r.shortlist[0].id) || (r.ranking&&r.ranking[0]&&r.ranking[0].id) || (r.care_team&&r.care_team[0]&&r.care_team[0].facilities&&r.care_team[0].facilities[0]&&r.care_team[0].facilities[0].id) || null};
   return `<div class="evidence-lbl" style="margin:14px 16px 4px">Referral note — hand to the patient or send to the destination</div>
     <div class="ref-note">${mdLite(r.referral_note)}</div>
     <div style="padding:6px 16px 8px"><button class="btn" onclick="recordReferral(event)">✓ Record this referral</button></div>`;
@@ -484,8 +484,38 @@ function renderCareTeam(r){
     <div class="ct-grid">${roles}</div>
     ${refNoteBlock(r)}`;
 }
+function renderProcedure(r){
+  const trace=(r.trace||[]).map(traceStep).join("");
+  const rows=(r.ranking||[]).map((x,i)=>{
+    const badges=(x.badges||[]).map(b=>`<span class="pr-badge${/NABH|JCI/.test(b)?' acc':''}">${esc(b)}</span>`).join("");
+    const claims=(x.claims||[]).map(c=>`<span class="pr-claim" title="self‑reported · unverified marketing figure">⚠ ${esc(c.text)}</span>`).join("");
+    return `<div class="pr-row" onclick="selectFacility('${esc(x.id)}')">
+      <div class="pr-rank">${i+1}</div>
+      <div class="pr-main">
+        <div class="pr-top"><b>${esc(x.name||'')}</b>
+          <span class="muted">${esc([x.city,x.state].filter(Boolean).join(', '))}${x.km!=null?' · '+x.km+' km':''}</span>
+          <span class="pr-score" title="capability + accreditation proxy score (not an outcome)">proxy ${x.score}</span></div>
+        <div class="pr-badges">${badges||'<span class="muted">no quality signals on record</span>'}</div>
+        ${x.evidence?`<div class="pr-ev">"${esc(x.evidence)}"</div>`:""}
+        ${x.caution?`<div class="pr-caution">⚠ ${esc(x.caution)}</div>`:""}
+        ${claims?`<div class="pr-claims">${claims}</div>`:""}
+      </div></div>`;
+  }).join("");
+  const where=r.anchored?'nearest in range':((r.plan&&r.plan.location)?('in '+r.plan.location):'nationwide');
+  $("copilot-body").innerHTML=`
+    ${refFromBanner(r)}
+    <div class="cp-plan"><b>Procedure referral:</b> <span class="chip">${esc(r.procedure||'')}</span> · <b>${(r.n_matched||0).toLocaleString()}</b> facilities list it · ${esc(where)}</div>
+    <div class="evidence-lbl" style="margin:12px 16px 4px">How the agent worked — match → score (accreditation + capability) → flag self‑reported claims → rank</div>
+    <div class="cp-trace">${trace}</div>
+    ${r.answer?`<div class="cp-answer">${esc(r.answer)}</div>`:""}
+    <div class="pr-caveat">⚖ <b>Ranked by a capability + accreditation proxy — not verified outcomes.</b> ${esc(r.legend||'')}</div>
+    <div class="evidence-lbl" style="margin:14px 16px 4px">Ranked destinations for ${esc(r.procedure||'')} · click any for full cited evidence</div>
+    ${rows||'<div class="empty">No facilities list this procedure here. Try a wider area or drop the referring facility.</div>'}
+    ${refNoteBlock(r)}`;
+}
 function renderCopilot(r){
   if(r && r.mode==="care_team"){ return renderCareTeam(r); }
+  if(r && r.mode==="procedure"){ return renderProcedure(r); }
   const plan=r.plan||{};
   const chips=(plan.capabilities||[]).map(c=>`<span class="chip">${esc(c)}</span>`).join("")+(plan.location?` <span class="chip">📍 ${esc(plan.location)}</span>`:"");
   const trace=(r.trace||[]).map(s=>{

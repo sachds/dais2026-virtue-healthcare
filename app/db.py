@@ -657,6 +657,176 @@ def find_provider(name: str) -> dict | None:
         return cur.fetchone()
 
 
+# --------------------------------------------------------------------------- #
+# Procedure-specific referral ranking.
+#
+# A provider sending a patient for a SPECIFIC procedure (knee replacement, cataract,
+# C-section…) wants the right *destination*, ranked by quality. This dataset has NO
+# verified outcomes or procedure volume — so we rank facilities that LIST the procedure
+# by a transparent capability + accreditation PROXY, and SURFACE (never score) the
+# self-reported volume/success figures some facilities advertise. Honest by construction.
+PROCEDURES: dict[str, dict] = {
+    "knee replacement": {"label": "Knee replacement", "dept": "Orthopedics",
+        "match": ["knee replacement", "knee arthroplasty", "total knee", "tkr"], "specialty": ["orthop"]},
+    "hip replacement": {"label": "Hip replacement", "dept": "Orthopedics",
+        "match": ["hip replacement", "hip arthroplasty", "total hip"], "specialty": ["orthop"]},
+    "cataract surgery": {"label": "Cataract surgery", "dept": "Ophthalmology",
+        "match": ["cataract", "phaco", "intraocular lens"], "specialty": ["ophthalmolog"]},
+    "cesarean section": {"label": "Cesarean section (C-section)", "dept": "Obstetrics",
+        "match": ["cesarean", "caesarean", "c-section", "c section", "lscs"], "specialty": ["obstetr", "gynec"]},
+    "angioplasty": {"label": "Angioplasty / cardiac stent", "dept": "Cardiology",
+        "match": ["angioplasty", "ptca", "coronary stent", "cardiac cath"], "specialty": ["cardiolog"]},
+    "bypass surgery": {"label": "Coronary bypass (CABG)", "dept": "Cardiac surgery",
+        "match": ["bypass surgery", "cabg", "coronary artery bypass"], "specialty": ["cardiacsurg", "cardiothoracic", "cardiovascular"]},
+    "dialysis": {"label": "Dialysis", "dept": "Nephrology",
+        "match": ["dialysis", "hemodialysis", "haemodialysis"], "specialty": ["nephrol"]},
+    "hysterectomy": {"label": "Hysterectomy", "dept": "Gynecology",
+        "match": ["hysterectomy"], "specialty": ["gynec", "obstetr"]},
+    "hernia repair": {"label": "Hernia repair", "dept": "General surgery",
+        "match": ["hernia"], "specialty": ["generalsurg", "laparoscop"]},
+    "chemotherapy": {"label": "Chemotherapy", "dept": "Oncology",
+        "match": ["chemotherapy"], "specialty": ["oncolog", "hemato"]},
+}
+_ADVANCED = [("robotic", "Robotic"), ("navigation", "Computer-navigated"), ("laparoscop", "Laparoscopic"),
+             ("minimally invasive", "Minimally invasive"), ("arthroscop", "Arthroscopic")]
+_ACCRED = [("nabh", "NABH"), ("jci", "JCI")]
+# self-reported, unverifiable marketing figures — surfaced as a flag, NEVER scored.
+_CLAIM_RE = [
+    (re.compile(r"[\d,]{2,}\+?\s*(?:surgeries|procedures|operations|cases|transplants|patients)\b[\w\s,%]{0,26}", re.I), "volume"),
+    (re.compile(r"\d{1,3}\s*%\s*(?:success|survival)[\w\s]{0,18}", re.I), "success rate"),
+    (re.compile(r"(?:success|survival)\s*rate[\w\s:]{0,26}", re.I), "success rate"),
+]
+
+
+def detect_procedure(query: str) -> str | None:
+    """Spot a specific procedure in the provider's free text (deterministic keyword match)."""
+    ql = (query or "").lower()
+    for key, spec in PROCEDURES.items():
+        if any(kw in ql for kw in spec["match"]):
+            return key
+    return None
+
+
+def _clamp_int(x) -> int:
+    try:
+        return max(0, min(100000, int(x)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _proc_snippet(blob: str, matches: list[str], span: int = 78) -> str:
+    low = blob.lower()
+    for kw in matches:
+        i = low.find(kw)
+        if i >= 0:
+            a, b = max(0, i - 14), min(len(blob), i + len(kw) + span)
+            return ("…" if a else "") + " ".join(blob[a:b].split()) + ("…" if b < len(blob) else "")
+    return ""
+
+
+def procedure_ranking(procedure: str, location: str = "",
+                      anchor: tuple | None = None, limit: int = 8) -> dict:
+    """Rank facilities that LIST `procedure` by a capability + accreditation proxy
+    (NABH/JCI · the matching specialty on record · advanced technique · scale).
+    NOT verified outcomes — this dataset has none. Self-reported volume/success
+    figures are surfaced as flags, never scored. Anchored to a referring provider's
+    lat/long when given (nearest in range, then ranked by quality)."""
+    spec = PROCEDURES.get(procedure)
+    if spec:
+        label, matches, spec_keys, dept = spec["label"], spec["match"], spec["specialty"], spec["dept"]
+    else:
+        label = (procedure or "").strip().title() or "Procedure"
+        matches, spec_keys, dept = [m for m in [(procedure or "").strip().lower()] if m], [], None
+    if not matches:
+        return {"available": False, "procedure": label, "ranking": [], "n_matched": 0}
+
+    blob_sql = ("lower(concat_ws(' ', coalesce(f.procedure,''), coalesce(f.capability,''), "
+                "coalesce(f.description,''), coalesce(f.equipment,'')))")
+    match_sql = " OR ".join([f"{blob_sql} LIKE %s"] * len(matches))
+    args: list = [f"%{m}%" for m in matches]
+    anchored = bool(anchor and anchor[0] is not None)
+    loc_sql = ""
+    if location.strip() and not anchored:
+        loc_sql = " AND (f.city ILIKE %s OR f.state ILIKE %s)"
+        args += [f"%{location.strip()}%"] * 2
+    sql = (f"SELECT f.id, f.name, f.city, f.state, f.facility_type, f.latitude, f.longitude, "
+           f"coalesce(f.specialties,'') AS specialties, "
+           f"concat_ws(' ', coalesce(f.procedure,''), coalesce(f.capability,''), "
+           f"coalesce(f.description,''), coalesce(f.equipment,'')) AS blob, "
+           f"fs.total_beds, fs.n_doctors "
+           f"FROM facilities f LEFT JOIN facility_services fs ON fs.facility_id = f.id "
+           f"WHERE ({match_sql}){loc_sql} LIMIT 700")
+    with _conn() as c, c.cursor() as cur:
+        cur.execute(sql, args)
+        rows = cur.fetchall()
+    n_matched = len(rows)
+
+    if anchored:
+        alat, alon = float(anchor[0]), float(anchor[1])
+        keep = []
+        for r in rows:
+            if r["latitude"] is not None and r["longitude"] is not None:
+                r["km"] = round(((float(r["latitude"]) - alat) ** 2 + (float(r["longitude"]) - alon) ** 2) ** 0.5 * 111, 1)
+                keep.append(r)
+        keep.sort(key=lambda r: r["km"])
+        rows = keep[:30]   # nearest in range, then rank those by quality
+    else:
+        for r in rows:
+            r["km"] = None
+
+    ranked = []
+    for r in rows:
+        blob = r["blob"] or ""
+        low = blob.lower()
+        specs = (r["specialties"] or "").lower()
+        score, badges = 0, []
+        acc = next((lab for kw, lab in _ACCRED if kw in low or kw in specs), None)
+        if acc:
+            score += 3
+            badges.append(acc + " accredited")
+        has_spec = bool(spec_keys) and any(k in specs for k in spec_keys)
+        if has_spec:
+            score += 2
+            badges.append((dept or "Specialty") + " on staff")
+        adv = [lab for kw, lab in _ADVANCED if kw in low][:3]
+        score += len(adv)
+        badges += adv
+        beds, docs = _clamp_int(r["total_beds"]), _clamp_int(r["n_doctors"])
+        if beds >= 500:
+            score += 2
+        elif beds >= 150:
+            score += 1
+        if beds:
+            badges.append(f"{beds} beds")
+        if docs >= 30:
+            score += 1
+        claims = []
+        for rx, kind in _CLAIM_RE:
+            m = rx.search(blob)
+            if m:
+                claims.append({"text": " ".join(m.group(0).split())[:90], "kind": kind})
+            if len(claims) >= 2:
+                break
+        caution = ""
+        if spec_keys and not has_spec:
+            caution = (f"lists {label.lower()} but no {dept.lower()} dept on record — "
+                       "verify (may be a non-specific mention)")
+        ranked.append({"id": r["id"], "name": r["name"], "city": r["city"], "state": r["state"],
+                       "facility_type": r["facility_type"], "km": r["km"], "score": score, "beds": beds,
+                       "badges": badges, "accredited": acc, "has_specialty": has_spec,
+                       "caution": caution, "claims": claims, "evidence": _proc_snippet(blob, matches)})
+    ranked.sort(key=lambda x: (-x["score"], x["km"] if x["km"] is not None else 1e9, -x["beds"]))
+    return {"available": True, "procedure": label, "dept": dept, "n_matched": n_matched,
+            "pool": len(rows), "anchored": anchored, "location": location.strip(),
+            "ranking": ranked[:limit],
+            "legend": ("NABH/JCI accreditation, the matching specialty on record, advanced technique "
+                       "(robotic / navigation / laparoscopic) and scale (beds, doctors). Self-reported "
+                       "volume/success figures are flagged, not scored. Real outcome ranking needs an "
+                       "external procedure registry — connect one and this becomes verified, not a proxy."),
+            "scored_on": ["NABH/JCI accreditation", "matching specialty on record",
+                          "advanced technique", "beds & doctors"]}
+
+
 def provider_card(facility_id: str) -> dict | None:
     """One provider's profile (name, type, capacity, service lines) for the outreach agent."""
     with _conn() as c, c.cursor() as cur:

@@ -61,7 +61,7 @@ def plan(query: str) -> dict:
         if m:
             visits = int(m.group(1))
     return {"capabilities": caps, "location": (p.get("location") or "").strip(),
-            "condition": cond, "visits": visits}
+            "condition": cond, "visits": visits, "procedure": db.detect_procedure(query)}
 
 
 def scrutinize(candidates: list[dict]) -> None:
@@ -226,6 +226,74 @@ def _capability_referral(query: str, p: dict) -> dict:
             "shortlist": shortlist, "blocked": blocked, "demand": demand}
 
 
+def _compose_procedure(query: str, label: str, location: str, ranking: list[dict]) -> str:
+    """Write the 2-3 sentence pick over the ranked destinations — honest that this is a
+    capability + accreditation PROXY, not verified outcomes."""
+    if not ranking:
+        return ""
+    brief = [{"name": x["name"], "city": x.get("city"), "km": x.get("km"), "score": x["score"],
+              "badges": x.get("badges"), "accredited": x.get("accredited"), "caution": x.get("caution"),
+              "self_reported_claims": [c["kind"] for c in (x.get("claims") or [])]} for x in ranking[:3]]
+    sys = ("You are a referral copilot helping a PROVIDER pick where to send a patient for a specific PROCEDURE. "
+           "You are given facilities that LIST the procedure, ranked by a transparent capability + accreditation "
+           "PROXY (NABH/JCI accreditation, the matching specialty on record, advanced technique, scale). You do NOT "
+           "have verified clinical outcomes or real procedure volume. In 2-3 sentences: name the top choice and why "
+           "(cite its accreditation / specialty / technique / distance), then state plainly that this ranks capability "
+           "and accreditation — NOT outcomes — and that any self-reported volume or success figures are unverified. "
+           "Never imply certified quality or real outcome data.")
+    usr = (f'Procedure: {label}{(" near " + location) if location else ""}. Provider asked: "{query}".\n'
+           f'Top candidates (already ranked):\n{json.dumps(brief, ensure_ascii=False)}\n'
+           'Write the 2-3 sentence recommendation (plain text, no markdown).')
+    try:
+        return llm.chat([{"role": "system", "content": sys}, {"role": "user", "content": usr}], 400)
+    except Exception:
+        t = ranking[0]
+        bits = ", ".join((t.get("badges") or [])[:3])
+        return (f"For {label}, the strongest capability match is {t['name']}"
+                + (f" ({t['city']})" if t.get("city") else "")
+                + (f", ~{t['km']} km away" if t.get("km") is not None else "")
+                + (f" — {bits}" if bits else "")
+                + ". Ranked by accreditation + capability, not verified outcomes; treat any self-reported figures as unverified.")
+
+
+def _procedure_referral(query: str, p: dict, fp: dict | None = None) -> dict:
+    proc = p["procedure"]
+    label = db.PROCEDURES.get(proc, {}).get("label", proc.title())
+    loc = p.get("location") or ""
+    anchor = None
+    if fp and fp.get("latitude") is not None:
+        anchor = (float(fp["latitude"]), float(fp["longitude"]))
+    where = f" near {loc}" if loc else ""
+    trace = [{"step": "plan", "role": "Planner", "model": MODEL,
+              "detail": f"procedure referral: {label}{where}"}]
+    rk = db.procedure_ranking(proc, loc, anchor, limit=6)
+    ranking = rk.get("ranking", [])
+    trace.append({"step": "match", "role": "Retriever", "tool": "procedure_ranking",
+                  "detail": f"{rk.get('n_matched', 0)} facilities list {label}"
+                            + (f" — nearest {rk.get('pool')} in range" if rk.get("anchored") else "")})
+    n_acc = sum(1 for x in ranking if x.get("accredited"))
+    trace.append({"step": "score", "role": "Quality proxy", "tool": "accreditation+capability",
+                  "detail": f"ranked by NABH/JCI ({n_acc} accredited), specialty on record, technique & scale "
+                            "— a capability PROXY, NOT verified outcomes"})
+    n_flag = sum(1 for x in ranking if x.get("claims"))
+    n_caut = sum(1 for x in ranking if x.get("caution"))
+    if n_flag or n_caut:
+        bits = []
+        if n_flag:
+            bits.append(f"{n_flag} with self-reported volume/success figures (surfaced, not scored)")
+        if n_caut:
+            bits.append(f"{n_caut} list the procedure with no matching specialty on record")
+        trace.append({"step": "flag", "role": "Skeptic", "tool": "claims",
+                      "detail": "flagged " + "; ".join(bits)})
+    answer = _compose_procedure(query, label, loc, ranking)
+    trace.append({"step": "compose", "role": "Composer", "model": MODEL,
+                  "detail": f"ranked {len(ranking)} destinations for {label}"})
+    return {"mode": "procedure", "plan": p, "trace": trace, "procedure": label, "dept": rk.get("dept"),
+            "n_matched": rk.get("n_matched", 0), "anchored": rk.get("anchored", False),
+            "ranking": ranking, "legend": rk.get("legend", ""), "scored_on": rk.get("scored_on", []),
+            "answer": answer}
+
+
 def _referral_note(query: str, fp: dict, r: dict) -> str:
     """Draft a handoff note the referring provider can hand the patient / send on."""
     dests = []
@@ -234,6 +302,12 @@ def _referral_note(query: str, fp: dict, r: dict) -> str:
             f = (role.get("facilities") or [None])[0]
             if f:
                 dests.append({"for": role["role"], "to": f["name"], "city": f.get("city"), "km": f.get("km")})
+    elif r.get("mode") == "procedure":
+        # only the top-ranked destination — its (city, distance) are self-consistent;
+        # naming runner-ups risks a dirty-coordinate mismatch in the handoff artifact.
+        for x in (r.get("ranking") or [])[:1]:
+            dests.append({"to": x["name"], "city": x.get("city"), "for": r.get("procedure"),
+                          "km": x.get("km"), "why": ", ".join((x.get("badges") or [])[:3])})
     else:
         for s in (r.get("shortlist") or [])[:3]:
             dests.append({"to": s["name"], "city": s.get("city"), "for": s.get("cap"), "why": s.get("why")})
@@ -241,7 +315,8 @@ def _referral_note(query: str, fp: dict, r: dict) -> str:
         return ""
     sys = ("You are a clinician writing a concise REFERRAL NOTE the referring provider hands the patient or sends to "
            "the destination. ~5-7 short lines, plain text (no markdown): From; patient need; where you're referring and "
-           "why (cite the specialty/evidence); what to do on arrival / what's enclosed. Use ONLY the destinations given.")
+           "why (cite the specialty/evidence); what to do on arrival / what's enclosed. Use ONLY the destinations given, "
+           "which are in PRIORITY ORDER — lead with the FIRST as the recommendation; you may note a closer alternative.")
     usr = (f"Referring provider: {fp['name']}, {fp.get('city') or ''}.\nPatient need (provider's words): \"{query}\".\n"
            f"Recommended destination(s): {json.dumps(dests, ensure_ascii=False)}\nWrite the referral note.")
     try:
@@ -258,7 +333,12 @@ def run(query: str, from_facility: str = "") -> dict:
     p = plan(query)
     if fp and not p["location"]:
         p["location"] = (fp.get("city") or "").strip()
-    r = care_team_referral(query, p) if p.get("condition", "none") != "none" else _capability_referral(query, p)
+    if p.get("procedure"):
+        r = _procedure_referral(query, p, fp)
+    elif p.get("condition", "none") != "none":
+        r = care_team_referral(query, p)
+    else:
+        r = _capability_referral(query, p)
     if fp:
         r["from_provider"] = {"name": fp["name"], "city": fp.get("city"), "state": fp.get("state")}
         r["trace"] = [{"step": "from", "role": "Referring provider", "tool": "find_provider",
