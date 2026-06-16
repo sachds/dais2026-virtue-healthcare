@@ -64,9 +64,16 @@ def _route(query: str, focus: dict, page: str) -> dict:
     intent = (out.get("intent") or "").strip()
     if intent not in INTENTS:
         intent = ""
+    ql = query.lower()
     if not intent:
-        ql = query.lower()
         intent = next((it for kw, it in _KW if kw in ql), "referral")
+    # high-confidence overrides — unambiguous phrasing beats the LLM's guess (keeps routing stable)
+    for kw, it in (("add capacity", "site"), ("where should i add", "site"), ("add a new", "site"),
+                   ("balance the load", "route"), ("relieve the chokepoint", "route"),
+                   ("provider circuit", "circuit"), ("mission circuit", "circuit")):
+        if kw in ql:
+            intent = it
+            break
     region = (out.get("region") or "").strip() or (focus.get("region") or "")
     cap = (out.get("capability") or "").strip().lower()
     if cap not in CAPS:
@@ -100,7 +107,7 @@ def _step(query: str, intent: str, region: str, cap: str, facility: str) -> dict
         bits.append(region)
     if cap:
         bits.append(cap.upper())
-    if facility:
+    if facility and intent in ("trust", "referral"):   # facility only matters for these
         bits.append(facility)
     return {"step": "understand", "role": "Assistant", "model": MODEL,
             "detail": "routed to → " + " · ".join(bits)}
@@ -125,7 +132,17 @@ def run(query: str, focus: dict | None = None, page: str = "") -> dict:
             answer = sub.get("finding") or sub.get("recommendation") or sub.get("answer") or ""
             label = {"network": "Map the network", "route": "See the routing plan",
                      "site": "See where to add capacity", "circuit": "See the circuit"}[intent]
-            return {"ok": True, "intent": intent, "title": f"{capx.upper()} · {region}",
+            items = []
+            if intent == "site":
+                items = [{"id": s["id"], "name": s["name"], "sub": f"{s['captured']} facilities closer · {s['km_saved_avg']} km saved"}
+                         for s in (sub.get("sites") or [])[:3]]
+            elif intent == "network":
+                items = [{"id": b["id"], "name": b["name"], "sub": f"{b['share']}% of referrals · {b['trust']} evidence"}
+                         for b in (sub.get("bottlenecks") or [])[:3]]
+            elif intent == "circuit":
+                items = [{"id": s["id"], "name": s["name"], "sub": f"day {s['day']} · {s['from_care_km']} km from care"}
+                         for s in (sub.get("stops") or [])[:4]]
+            return {"ok": True, "intent": intent, "title": f"{capx.upper()} · {region}", "items": items,
                     "answer": answer, "trace": head + (sub.get("trace") or []),
                     "goto": {"view": "network", "focus": {"region": region, "capability": capx}, "label": label}}
 
@@ -196,8 +213,8 @@ def run(query: str, focus: dict | None = None, page: str = "") -> dict:
             f"- {x['capability'].upper()} in {x['state']}: {x['trusted']} of {x['n_scored']} trusted "
             f"(need {x.get('need_index')})" for x in risks[:6])
         answer = _synth(query, ctx)
-        items = [{"capability": x["capability"], "state": x["state"], "trusted": x["trusted"],
-                  "n_scored": x["n_scored"]} for x in risks[:4]]
+        items = [{"name": f"{x['capability'].upper()} in {x['state']}",
+                  "sub": f"{x['trusted']} of {x['n_scored']} trusted"} for x in risks[:4]]
         return {"ok": True, "intent": "gap", "title": "Worst gaps", "answer": answer, "items": items,
                 "trace": head + [{"step": "gap", "role": "Planner", "tool": "desert_grid",
                                   "detail": "ranked shortfalls by burden × thin trusted supply"}],

@@ -98,6 +98,9 @@ body.sidebar-collapsed .sc-i{transform:rotate(180deg)}
 .asst-answer{font-size:14px;line-height:1.6;color:#1f2a40;margin:8px 0}
 .aitems{display:flex;flex-direction:column;gap:5px;margin:6px 0}
 .aitem{font-size:12.5px;padding:7px 10px;border:1px solid var(--line);border-radius:8px}
+.aitem.clk{cursor:pointer}
+.aitem.clk:hover{border-color:#c9d6ea;background:#fbfdff}
+.aitem-go{display:inline-block;margin-top:3px;font-size:11px;font-weight:700;color:var(--blue)}
 .asst-go{margin-top:10px}
 
 .controls{display:flex;gap:10px;flex-wrap:wrap;padding:12px 14px;background:var(--panel);border:1px solid var(--line);border-radius:12px;margin-bottom:14px}

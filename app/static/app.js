@@ -1121,7 +1121,9 @@ let _asstGoto=null;
 function renderAsst(r){
   _asstGoto=r.goto||null;
   const trace=(r.trace||[]).map(traceStep).join("");
-  const items=(r.items||[]).map(x=>`<div class="aitem"><b>${esc((x.capability||'').toUpperCase())}</b> in ${esc(x.state||'')} <span class="muted">— ${x.trusted} of ${x.n_scored} trusted</span></div>`).join("");
+  const items=(r.items||[]).map(x=>{ const clk=!!x.id;
+    return `<div class="aitem${clk?' clk':''}"${clk?` onclick="asstItem('${esc(x.id)}')"`:''}>
+      <b>${esc(x.name||'')}</b>${x.sub?`<div class="muted">${esc(x.sub)}</div>`:''}${clk?`<span class="aitem-go">trust‑check →</span>`:''}</div>`; }).join("");
   const goBtn = r.goto ? `<button class="btn asst-go" onclick="asstGoto()">${esc(r.goto.label||'Open the full view')} →</button>` : "";
   $("asst-body").innerHTML=`
     ${r.title?`<div class="asst-rtitle">${esc(r.title)}</div>`:""}
@@ -1144,6 +1146,8 @@ function asstGoto(){
   window.scrollTo(0,0);
 }
 window.asstGoto=asstGoto;
+function asstItem(id){ toggleAsst(false); selectFacility(id); }   // jump from a result card to the facility
+window.asstItem=asstItem;
 $("asst-q").addEventListener("keydown",e=>{ if(e.key==="Enter") askAssistant(); });
 
 window.selectFacility=selectFacility;window.override=override;window.addNote=addNote;window.shortlistFac=shortlistFac;
