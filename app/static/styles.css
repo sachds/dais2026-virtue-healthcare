@@ -120,6 +120,11 @@ textarea{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 1
 
 /* Referral Copilot */
 .copilot{padding:14px 16px;background:linear-gradient(180deg,#eef5ff,#f6f8fb);border:1px solid #dbe6fb;border-radius:12px;margin-bottom:14px}
+.cp-from-row{display:flex;gap:9px;align-items:center;margin-bottom:9px}
+.cp-from-lbl{color:var(--muted);font-size:12px;white-space:nowrap}
+.cp-from-row input{flex:1;padding:8px 12px;border:1px solid #cdddf5;border-radius:10px;font:inherit;background:#fff}
+.ref-from{margin:0 16px 4px;padding:8px 13px;background:var(--blue-soft);border:1px solid #cdddf5;border-radius:10px;font-size:13px;color:#33415c}
+.ref-note{margin:2px 16px;padding:12px 15px;border:1px solid var(--line);border-left:3px solid var(--blue);border-radius:10px;background:#fbfcff;font-size:13.5px;line-height:1.6;color:#1f2a40;white-space:normal}
 .cp-row{display:flex;gap:10px;align-items:center}
 .cp-icon{color:var(--blue);font-size:18px}
 .cp-row input{flex:1;padding:11px 13px;border:1px solid #cdddf5;border-radius:10px;font:inherit;background:#fff}

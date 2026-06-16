@@ -18,6 +18,7 @@ agent's work — including what it was *not allowed* to recommend, and why.
 from __future__ import annotations
 
 import json
+import re
 
 from app import agent_tools, db, llm, policy
 
@@ -47,6 +48,18 @@ def plan(query: str) -> dict:
         visits = int(p.get("visits") or 0)
     except (TypeError, ValueError):
         visits = 0
+    # deterministic safety net — the LLM is inconsistent about condition / visit count
+    ql = query.lower()
+    if cond == "none":
+        for kw, cc in (("diabet", "diabetes"), ("hypertens", "hypertension"), ("blood pressure", "hypertension"),
+                       ("pregnan", "pregnancy"), ("antenatal", "pregnancy"), ("expecting", "pregnancy")):
+            if kw in ql and cc in db.CARE_TEAMS:
+                cond = cc
+                break
+    if not visits:
+        m = re.search(r"(\d+)\s*(?:visit|time)", ql)
+        if m:
+            visits = int(m.group(1))
     return {"capabilities": caps, "location": (p.get("location") or "").strip(),
             "condition": cond, "visits": visits}
 
@@ -154,12 +167,8 @@ def care_team_referral(query: str, p: dict) -> dict:
             "escalation": escalation, "answer": answer}
 
 
-def run(query: str) -> dict:
+def _capability_referral(query: str, p: dict) -> dict:
     trace: list[dict] = []
-
-    p = plan(query)
-    if p.get("condition", "none") != "none":          # chronic condition → care-team referral
-        return care_team_referral(query, p)
     caps = p["capabilities"] or CAPS
     where = f" near {p['location']}" if p["location"] else ""
     trace.append({"step": "plan", "role": "Planner", "model": MODEL,
@@ -212,6 +221,48 @@ def run(query: str) -> dict:
                           "why": w.get("why") or default_why,
                           "caution": w.get("caution") or "; ".join(c.get("reasons") or [])})
 
-    return {"plan": p, "trace": trace, "n_candidates": len(candidates),
+    return {"mode": "referral", "plan": p, "trace": trace, "n_candidates": len(candidates),
             "answer": comp["answer"] or "Ranked by strongest surviving evidence.",
             "shortlist": shortlist, "blocked": blocked, "demand": demand}
+
+
+def _referral_note(query: str, fp: dict, r: dict) -> str:
+    """Draft a handoff note the referring provider can hand the patient / send on."""
+    dests = []
+    if r.get("mode") == "care_team":
+        for role in (r.get("care_team") or [])[:4]:
+            f = (role.get("facilities") or [None])[0]
+            if f:
+                dests.append({"for": role["role"], "to": f["name"], "city": f.get("city"), "km": f.get("km")})
+    else:
+        for s in (r.get("shortlist") or [])[:3]:
+            dests.append({"to": s["name"], "city": s.get("city"), "for": s.get("cap"), "why": s.get("why")})
+    if not dests:
+        return ""
+    sys = ("You are a clinician writing a concise REFERRAL NOTE the referring provider hands the patient or sends to "
+           "the destination. ~5-7 short lines, plain text (no markdown): From; patient need; where you're referring and "
+           "why (cite the specialty/evidence); what to do on arrival / what's enclosed. Use ONLY the destinations given.")
+    usr = (f"Referring provider: {fp['name']}, {fp.get('city') or ''}.\nPatient need (provider's words): \"{query}\".\n"
+           f"Recommended destination(s): {json.dumps(dests, ensure_ascii=False)}\nWrite the referral note.")
+    try:
+        return llm.chat([{"role": "system", "content": sys}, {"role": "user", "content": usr}], 400)
+    except Exception:
+        d = dests[0]
+        return (f"REFERRAL — From {fp['name']}, {fp.get('city') or ''}. Re: {query}. Referring to {d['to']}"
+                f"{(' (' + d['city'] + ')') if d.get('city') else ''}{(' — ' + str(d['km']) + ' km') if d.get('km') else ''}. "
+                "Please assess and manage; clinical summary enclosed.")
+
+
+def run(query: str, from_facility: str = "") -> dict:
+    fp = db.find_provider(from_facility) if (from_facility or "").strip() else None
+    p = plan(query)
+    if fp and not p["location"]:
+        p["location"] = (fp.get("city") or "").strip()
+    r = care_team_referral(query, p) if p.get("condition", "none") != "none" else _capability_referral(query, p)
+    if fp:
+        r["from_provider"] = {"name": fp["name"], "city": fp.get("city"), "state": fp.get("state")}
+        r["trace"] = [{"step": "from", "role": "Referring provider", "tool": "find_provider",
+                       "detail": f"from {fp['name']}" + (f", {fp.get('city')}" if fp.get("city") else "")}] + (r.get("trace") or [])
+        r["referral_note"] = _referral_note(query, fp, r)
+        r["trace"].append({"step": "note", "role": "Referral writer", "model": MODEL, "detail": "drafted the referral note"})
+    return r

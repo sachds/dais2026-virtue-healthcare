@@ -102,7 +102,7 @@ async def copilot(payload: dict):
     if not q:
         return JSONResponse({"error": "query required"}, status_code=400)
     from app import copilot as cp
-    return JSONResponse(await asyncio.to_thread(cp.run, q))
+    return JSONResponse(await asyncio.to_thread(cp.run, q, payload.get("from_facility", "")))
 
 
 @app.post("/api/publichealth/immunization")

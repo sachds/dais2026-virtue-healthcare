@@ -78,9 +78,13 @@
         <p>Where should a patient go? A governed multi‑agent mesh that shows its work — and what it refused.</p>
       </div>
       <div class="copilot">
+        <div class="cp-from-row">
+          <span class="cp-from-lbl">Referring from</span>
+          <input type="text" id="cp-from" placeholder="your facility (optional — anchors nearest + writes the referral note)"/>
+        </div>
         <div class="cp-row">
           <span class="cp-icon">✦</span>
-          <input type="text" id="cp-q" placeholder="Ask the Referral Copilot — e.g. &quot;cancer care near Ranchi&quot;"/>
+          <input type="text" id="cp-q" placeholder="Patient need — e.g. &quot;diabetic patient, 3 visits this month&quot; or &quot;needs ICU&quot;"/>
           <button class="btn" id="cp-ask">Ask</button>
         </div>
         <div class="cp-ex">Try:

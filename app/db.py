@@ -644,6 +644,19 @@ def providers_in_region(district: str, limit: int = 12) -> list[dict]:
             return []
 
 
+def find_provider(name: str) -> dict | None:
+    """Resolve a referring provider by name (best single match) — the facility the
+    Copilot refers FROM, used to anchor location + nearest routing."""
+    q = (name or "").strip()
+    if not q:
+        return None
+    with _conn() as c, c.cursor() as cur:
+        cur.execute("SELECT id, name, city, state, latitude, longitude FROM facilities "
+                    "WHERE name ILIKE %s ORDER BY (name ILIKE %s) DESC, length(name) ASC LIMIT 1",
+                    (f"%{q}%", f"{q}%"))
+        return cur.fetchone()
+
+
 def provider_card(facility_id: str) -> dict | None:
     """One provider's profile (name, type, capacity, service lines) for the outreach agent."""
     with _conn() as c, c.cursor() as cur:

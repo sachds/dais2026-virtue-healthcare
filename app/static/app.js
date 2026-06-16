@@ -438,13 +438,30 @@ async function shortlistFac(fid){await review({action:"shortlist",facility_id:fi
 // ---- Track 3: Referral Copilot (governed multi-agent mesh) ---------------- //
 async function runCopilot(){
   const q = $("cp-q").value.trim(); if(!q) return;
+  const from = ($("cp-from")?.value||"").trim();
   activate("copilot");
-  showLoading("copilot-body", ["Planning the need","Retrieving from Lakebase","Scrutinizing the evidence","Governing the result","Composing the referral"], "Referral Copilot");
+  showLoading("copilot-body", from?["Identifying the referring provider","Retrieving from Lakebase","Scrutinizing the evidence","Governing the result","Writing the referral note"]:["Planning the need","Retrieving from Lakebase","Scrutinizing the evidence","Governing the result","Composing the referral"], "Referral Copilot");
   try{
-    const r = await (await fetch("/api/copilot",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({query:q})})).json();
+    const r = await (await fetch("/api/copilot",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({query:q, from_facility:from})})).json();
     stopLoading(); renderCopilot(r);
   }catch(e){ stopLoading(); $("copilot-body").innerHTML = `<div class="empty">Copilot error: ${esc(e.message)}</div>`; }
 }
+let _referralCtx = null;
+function refFromBanner(r){ return r.from_provider ? `<div class="ref-from">📋 Referring from <b>${esc(r.from_provider.name)}</b>${r.from_provider.city?` · <span class="muted">${esc(r.from_provider.city)}</span>`:''} — nearest destinations & a referral note</div>` : ""; }
+function refNoteBlock(r){
+  if(!r.from_provider || !r.referral_note) return "";
+  _referralCtx = {from:r.from_provider.name, note:r.referral_note,
+    destId:(r.shortlist&&r.shortlist[0]&&r.shortlist[0].id) || (r.care_team&&r.care_team[0]&&r.care_team[0].facilities&&r.care_team[0].facilities[0]&&r.care_team[0].facilities[0].id) || null};
+  return `<div class="evidence-lbl" style="margin:14px 16px 4px">Referral note — hand to the patient or send to the destination</div>
+    <div class="ref-note">${mdLite(r.referral_note)}</div>
+    <div style="padding:6px 16px 8px"><button class="btn" onclick="recordReferral(event)">✓ Record this referral</button></div>`;
+}
+async function recordReferral(ev){
+  if(!_referralCtx) return;
+  await review({action:"decision", facility_id:_referralCtx.destId, body:("Referral from "+_referralCtx.from+" — "+(_referralCtx.note||"")).slice(0,500), user_id:"provider"});
+  if(ev&&ev.target){ ev.target.textContent="✓ Recorded to Lakebase"; ev.target.disabled=true; }
+}
+window.recordReferral=recordReferral;
 function renderCareTeam(r){
   const p=r.plan||{};
   const chips=`<span class="chip" style="text-transform:capitalize">${esc(p.condition||'')}</span>`+(p.location?` <span class="chip">📍 ${esc(p.location)}</span>`:"")+(p.visits?` <span class="chip">${p.visits} visits/mo</span>`:"");
@@ -457,13 +474,15 @@ function renderCareTeam(r){
     return `<div class="ct-role"><div class="ct-role-h">${esc(role.role)}</div>${facs||'<div class="muted" style="padding:6px 0">No local provider found.</div>'}</div>`;
   }).join("");
   $("copilot-body").innerHTML=`
+    ${refFromBanner(r)}
     <div class="cp-plan"><b>Care team:</b> ${chips}</div>
     <div class="evidence-lbl" style="margin:12px 16px 4px">How the agent worked</div>
     <div class="cp-trace">${trace}</div>
     ${banner}
     ${r.answer?`<div class="cp-answer">${esc(r.answer)}</div>`:""}
     <div class="evidence-lbl" style="margin:14px 16px 4px">The care team — nearest provider for each specialty · click any for cited evidence</div>
-    <div class="ct-grid">${roles}</div>`;
+    <div class="ct-grid">${roles}</div>
+    ${refNoteBlock(r)}`;
 }
 function renderCopilot(r){
   if(r && r.mode==="care_team"){ return renderCareTeam(r); }
@@ -489,6 +508,7 @@ function renderCopilot(r){
   const demand = (r.demand && r.demand.need_index!=null)
     ? `<div class="cp-demand">📊 NFHS demand · <b>${esc(r.demand.state)}</b>: need ${r.demand.need_index} — ${r.demand.institutional_birth}% births in-facility, ${r.demand.insurance}% insured</div>` : "";
   $("copilot-body").innerHTML=`
+    ${refFromBanner(r)}
     <div class="cp-plan"><b>Agent plan:</b> ${chips||'—'} · retrieved <b>${r.n_candidates||0}</b> evidence-backed candidates from Lakebase</div>
     <div class="evidence-lbl" style="margin:12px 16px 4px">How the agent worked — plan → retrieve → scrutinize → challenge → govern → compose</div>
     <div class="cp-trace">${trace}</div>
@@ -496,7 +516,8 @@ function renderCopilot(r){
     ${demand}
     <div class="evidence-lbl" style="margin:14px 16px 4px">Recommended — vetted &amp; governed · click any for full cited evidence</div>
     ${sl||'<div class="empty">No evidence-backed matches survived governance. Try a wider area.</div>'}
-    ${bl?`<div class="evidence-lbl" style="margin:16px 16px 4px">Not recommended — blocked by policy</div>${bl}`:''}`;
+    ${bl?`<div class="evidence-lbl" style="margin:16px 16px 4px">Not recommended — blocked by policy</div>${bl}`:''}
+    ${refNoteBlock(r)}`;
 }
 window.cpEx=(q)=>{$("cp-q").value=q;runCopilot();};
 $("cp-ask").onclick=runCopilot;
