@@ -12,17 +12,51 @@ body{background:var(--bg);color:var(--ink);font:14.5px/1.5 ui-sans-serif,system-
 button{font:inherit;cursor:pointer}
 a{color:var(--blue);text-decoration:none}
 
-header{display:flex;align-items:center;gap:14px;padding:12px 22px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
-header .logo{font-weight:800;letter-spacing:-.2px}
-header .logo b{color:var(--blue)}
-header .tag{color:var(--muted);font-size:13px}
-header .spacer{flex:1}
-header .status{color:var(--muted);font-size:12.5px}
-header .status b{color:var(--ink)}
-header .tabs{display:flex;gap:5px;margin-left:8px}
-.tab{background:transparent;border:1px solid transparent;border-radius:9px;padding:6px 12px;color:var(--muted);font-weight:600;font-size:13.5px}
-.tab:hover{background:var(--bg);color:var(--ink)}
-.tab.active{background:var(--blue-soft);border-color:#cdddf5;color:var(--blue)}
+/* ---- app shell: collapsible sidebar + topbar ---- */
+.app{display:flex;min-height:100vh}
+.sidebar{flex:none;width:228px;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow-y:auto;transition:width .16s ease}
+.side-top{display:flex;align-items:center;padding:15px 18px 10px;min-height:54px}
+.logo{font-weight:800;letter-spacing:-.2px;font-size:17px}
+.logo b{color:var(--blue)}
+.logo-mini{display:none;font-weight:900;color:var(--blue);font-size:17px}
+.side-nav{flex:1;padding:6px 0}
+.navitem{display:flex;align-items:center;gap:11px;width:100%;padding:9px 18px;border:0;background:transparent;color:#475569;font-weight:600;font-size:14px;cursor:pointer;text-align:left;position:relative}
+.navitem:hover{background:var(--bg);color:var(--ink)}
+.navitem.active{background:var(--blue-soft);color:var(--blue)}
+.navitem.active::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:3px;border-radius:0 3px 3px 0;background:var(--blue)}
+.ni-i{font-size:15.5px;width:20px;text-align:center;flex:none}
+.nav-sec{font-size:9.5px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:#9aa6b6;padding:13px 18px 3px}
+.side-collapse{display:flex;align-items:center;gap:11px;width:100%;padding:11px 18px;border:0;border-top:1px solid var(--line);background:transparent;color:var(--muted);font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.side-collapse:hover{background:var(--bg);color:var(--ink)}
+body.sidebar-collapsed .sidebar{width:60px}
+body.sidebar-collapsed .ni-l,body.sidebar-collapsed .nav-sec,body.sidebar-collapsed .logo,body.sidebar-collapsed .side-collapse .ni-l{display:none}
+body.sidebar-collapsed .logo-mini{display:block}
+body.sidebar-collapsed .side-top{justify-content:center;padding:15px 0 10px}
+body.sidebar-collapsed .navitem,body.sidebar-collapsed .side-collapse{justify-content:center;padding-left:0;padding-right:0}
+body.sidebar-collapsed .sc-i{transform:rotate(180deg)}
+.main-wrap{flex:1;min-width:0;display:flex;flex-direction:column}
+.topbar{display:flex;align-items:center;gap:10px;padding:10px 22px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:6;min-height:54px}
+.spacer{flex:1}
+.status{color:var(--muted);font-size:12.5px;white-space:nowrap}
+.status b{color:var(--ink)}
+.side-toggle{font-size:18px;color:var(--muted);background:transparent;border:0;cursor:pointer;padding:2px 7px;border-radius:7px;line-height:1}
+.side-toggle:hover{background:var(--bg);color:var(--ink)}
+/* user / settings menu */
+.usermenu{position:relative}
+.user-btn{display:flex;align-items:center;gap:5px;background:transparent;border:0;cursor:pointer;padding:3px}
+.user-av{width:30px;height:30px;border-radius:50%;background:var(--blue);color:#fff;font-weight:800;font-size:11.5px;display:flex;align-items:center;justify-content:center;letter-spacing:.3px}
+.user-cv{color:var(--muted);font-size:11px}
+.user-dd{position:absolute;right:0;top:calc(100% + 8px);width:258px;background:var(--panel);border:1px solid var(--line);border-radius:13px;box-shadow:0 12px 34px rgba(23,32,51,.16);padding:7px;display:none;z-index:60}
+.user-dd.open{display:block}
+.ud-head{padding:8px 10px 9px;border-bottom:1px solid var(--line);margin-bottom:6px;display:flex;flex-direction:column}
+.ud-head b{font-size:13.5px}
+.ud-head span{font-size:11.5px;color:var(--muted);margin-top:1px}
+.ud-item{display:flex;align-items:center;gap:9px;width:100%;padding:8px 10px;border:0;background:transparent;border-radius:8px;font:inherit;font-size:13px;color:#33415c;cursor:pointer;text-align:left}
+.ud-item:hover{background:var(--bg)}
+.udi-i{width:16px;text-align:center;color:var(--muted)}
+.ud-sep{height:1px;background:var(--line);margin:6px 4px}
+.ud-about{font-size:11.5px;color:var(--muted);line-height:1.5;padding:6px 10px 7px}
+.ud-about kbd{font-family:ui-monospace,monospace;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:0 4px;font-size:10.5px}
 
 /* Focus spine — the shared working context carried across scales */
 .focus-bar{display:none}

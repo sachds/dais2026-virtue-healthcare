@@ -55,8 +55,16 @@ window.focusGo=focusGo;
 // ---- view / pane switching ----------------------------------------------- //
 function activate(name){
   document.querySelectorAll(".pane").forEach(p=>p.classList.toggle("active", p.id==="pane-"+name));
-  document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active", t.dataset.view===name));
+  document.querySelectorAll(".navitem").forEach(t=>t.classList.toggle("active", t.dataset.view===name));
 }
+// ---- sidebar + user menu ----
+function toggleSidebar(){ document.body.classList.toggle("sidebar-collapsed"); }
+window.toggleSidebar=toggleSidebar;
+function toggleUserMenu(ev){ if(ev) ev.stopPropagation(); $("user-dd").classList.toggle("open"); }
+function closeUserMenu(){ $("user-dd").classList.remove("open"); }
+window.toggleUserMenu=toggleUserMenu; window.closeUserMenu=closeUserMenu;
+document.addEventListener("click", e=>{ const m=$("user-dd"); if(m && m.classList.contains("open") && !e.target.closest(".usermenu")) m.classList.remove("open"); });
+document.addEventListener("keydown", e=>{ if(e.key==="/" && !/INPUT|TEXTAREA|SELECT/.test((e.target.tagName||"")) ){ e.preventDefault(); toggleAsst(true); } });
 function showView(name){
   activate(name);
   if(name==="home") showHome();
@@ -67,7 +75,7 @@ function showView(name){
   else if(name==="trust"){ loadShortlist(); if(!$("list").querySelector(".fac")) loadFacilities(); }
   window.scrollTo(0,0);
 }
-document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>showView(t.dataset.view));
+document.querySelectorAll(".navitem").forEach(t=>t.onclick=()=>showView(t.dataset.view));
 
 // Overview landing — fills the substrate stats; the scale cards route via showView()
 function showHome(){
