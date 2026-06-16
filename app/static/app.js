@@ -429,6 +429,7 @@ function traceStep(s){
 }
 function mdLite(s){
   return esc(s)
+    .replace(/^\s*([-*_])\1{2,}\s*$/gm,'')
     .replace(/^#{1,3}\s+(.*)$/gm,'<h3>$1</h3>')
     .replace(/^#{4,6}\s+(.*)$/gm,'<h4>$1</h4>')
     .replace(/\*\*(.+?)\*\*/g,'<b>$1</b>')
@@ -439,15 +440,66 @@ function setPhMode(m){
   PH_MODE = m;
   document.querySelectorAll('[data-phm]').forEach(b=>b.classList.toggle('active', b.dataset.phm===m));
   setPhControls();
+  if(m==='burden'){ showBurden(); return; }
   $("ph-body").innerHTML = `<div class="empty">${m==='immun'?'Find the under‑immunized districts and draft a campaign.':'Enter a district + disease to draft an isolation protocol.'}</div>`;
 }
 window.setPhMode = setPhMode;
 function setPhControls(){
-  $("ph-controls").innerHTML = PH_MODE==='immun'
-   ? `<div class="ph-bar"><input id="ph-region" placeholder="District (optional — leave blank for worst nationwide)"/><button class="btn" onclick="runImmun()">💉 Plan campaign</button></div>`
-   : `<div class="ph-bar"><input id="ph-oregion" placeholder="District (e.g. Jhansi)"/><input id="ph-disease" placeholder="Disease (e.g. measles)"/><button class="btn" onclick="runOutbreak()">🦠 Plan response</button></div>`;
+  if(PH_MODE==='immun')
+    $("ph-controls").innerHTML = `<div class="ph-bar"><input id="ph-region" placeholder="District (optional — leave blank for worst nationwide)"/><button class="btn" onclick="runImmun()">💉 Plan campaign</button></div>`;
+  else if(PH_MODE==='outbreak')
+    $("ph-controls").innerHTML = `<div class="ph-bar"><input id="ph-oregion" placeholder="District (e.g. Jhansi)"/><input id="ph-disease" placeholder="Disease (e.g. measles)"/><button class="btn" onclick="runOutbreak()">🦠 Plan response</button></div>`;
+  else $("ph-controls").innerHTML = "";
 }
 function showPublicHealth(){ setPhControls(); }
+async function showBurden(){
+  $("ph-body").innerHTML = `<div class="empty">Benchmarking disease prevalence across districts…</div>`;
+  const b = await (await fetch("/api/publichealth/benchmarks")).json();
+  renderBurden(b);
+}
+function renderBurden(b){
+  if(!b || !b.available){ $("ph-body").innerHTML = `<div class="empty">Benchmarks need the NFHS district data — run load_nfhs_district.py.</div>`; return; }
+  const bmRow = (district, state, v, nat, extra, cond)=>{
+    const over = nat!=null ? (v-nat).toFixed(1) : null;
+    return `<div class="bm-row">
+      <span class="bm-d">${esc(district)} <span class="muted">${esc(state||'')}</span></span>
+      <span class="bm-bar"><i style="width:${Math.min(100,v)}%"></i></span>
+      <span class="bm-v">${extra||`${v}%`}${over!=null?` <span class="muted">+${over} vs ${nat}%</span>`:''}</span>
+      <button class="bm-esc" onclick="runEscalate('${esc(district).replace(/'/g,'')}','${cond}')">⚑ escalate</button>
+    </div>`;
+  };
+  const conds = (b.conditions||[]).map(c=>`
+    <section class="panel" style="margin-bottom:14px">
+      <h2>${esc(c.label)} · national benchmark <b style="color:var(--ink)">${c.national}%</b></h2>
+      <div class="body">${(c.worst||[]).map(w=>bmRow(w.district,w.state,w.v,c.national,null,c.key)).join("")}</div>
+    </section>`).join("");
+  const nut = (b.nutrition||[]).map(n=>bmRow(n.district,n.state,n.anemia+n.stunting,null,
+     `<b style="color:var(--weak)">${n.anemia}%</b> anaemia · <b style="color:var(--partial)">${n.stunting}%</b> stunting`,"child malnutrition (anaemia + stunting)")).join("");
+  $("ph-body").innerHTML = `
+    <div class="evidence-lbl" style="margin:2px 16px 8px">Prevalence vs national benchmark — worst districts · click ⚑ to escalate to the right organizations</div>
+    ${conds}
+    <section class="panel"><h2>Anaemia × stunting — combined child‑nutrition burden (they go together)</h2><div class="body">${nut}</div></section>
+    <div id="ph-escalation"></div>`;
+}
+async function runEscalate(district, condition){
+  const el = $("ph-escalation"); if(!el) return;
+  el.innerHTML = `<section class="panel" style="margin-top:14px"><div class="body"><div class="empty">Coordinating a multi‑organization escalation for ${esc(district)}…</div></div></section>`;
+  el.scrollIntoView({behavior:"smooth", block:"center"});
+  try{
+    const r = await (await fetch("/api/publichealth/escalate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({district,condition})})).json();
+    renderEscalation(r);
+  }catch(e){ el.innerHTML = `<div class="empty">Escalation error: ${esc(e.message)}</div>`; }
+}
+window.runEscalate = runEscalate;
+function renderEscalation(r){
+  const trace = (r.trace||[]).map(traceStep).join("");
+  $("ph-escalation").innerHTML = `
+    <section class="panel" style="margin-top:14px">
+      <h2>⚑ Escalation — ${esc(r.district||'')} · ${esc(r.condition||'')}</h2>
+      <div class="body"><div class="cp-trace">${trace}</div><div class="ph-plan">${mdLite(r.plan||'')}</div></div>
+    </section>`;
+  $("ph-escalation").scrollIntoView({behavior:"smooth", block:"start"});
+}
 async function runImmun(){
   const region = ($("ph-region").value||"").trim();
   $("ph-body").innerHTML = `<div class="empty">Targeting under‑immunized districts → drafting the campaign…</div>`;

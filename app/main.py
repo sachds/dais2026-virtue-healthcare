@@ -118,3 +118,17 @@ async def ph_outbreak(payload: dict):
         return JSONResponse({"error": "region required"}, status_code=400)
     from app import publichealth as ph
     return JSONResponse(await asyncio.to_thread(ph.outbreak_protocol, region, payload.get("disease", "")))
+
+
+@app.get("/api/publichealth/benchmarks")
+async def ph_benchmarks():
+    return JSONResponse(await asyncio.to_thread(db.disease_benchmarks))
+
+
+@app.post("/api/publichealth/escalate")
+async def ph_escalate(payload: dict):
+    region = (payload.get("district") or "").strip()
+    if not region:
+        return JSONResponse({"error": "district required"}, status_code=400)
+    from app import publichealth as ph
+    return JSONResponse(await asyncio.to_thread(ph.escalate_burden, region, payload.get("condition", "stunting")))

@@ -25,6 +25,7 @@ IND = [
     ("institutional_birth", "institutional_birth_5y_pct"),
     ("insurance", "hh_member_covered_health_insurance_pct"),
     ("stunting", "child_u5_who_are_stunted_height_for_age_18_pct"),
+    ("anemia", "child_6_59m_who_are_anaemic_lt_11_0_g_dl_22_pct"),
 ]
 
 DDL = """
@@ -40,6 +41,7 @@ CREATE TABLE IF NOT EXISTS nfhs_district (
     institutional_birth DOUBLE PRECISION,
     insurance           DOUBLE PRECISION,
     stunting            DOUBLE PRECISION,
+    anemia              DOUBLE PRECISION,
     PRIMARY KEY (state, district)
 )"""
 
@@ -70,6 +72,7 @@ def main() -> None:
            f"ON CONFLICT (state, district) DO UPDATE SET {upd}")
     with psycopg.connect(url) as pg, pg.cursor() as pc:
         pc.execute(DDL)
+        pc.execute("ALTER TABLE nfhs_district ADD COLUMN IF NOT EXISTS anemia DOUBLE PRECISION")
         pc.execute("CREATE INDEX IF NOT EXISTS ix_nd_dkey ON nfhs_district (dkey)")
         pc.executemany(ins, rows)
         pg.commit()

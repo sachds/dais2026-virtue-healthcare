@@ -97,6 +97,43 @@ def _reason_outbreak(region: str, disease: str, prof: dict) -> str:
                 f"state Health Department for surveillance confirmation and resources.")
 
 
+def _reason_escalation(district: str, condition: str, prof: dict) -> str:
+    nfhs = prof.get("nfhs") or {}
+    brief = {"district": district, "condition": condition,
+             "indicators": {"anaemia_child": nfhs.get("anemia"), "stunting_child": nfhs.get("stunting"),
+                            "diabetes": nfhs.get("diabetes"), "hypertension": nfhs.get("hypertension"),
+                            "insurance": nfhs.get("insurance"), "institutional_birth": nfhs.get("institutional_birth"),
+                            "full_immunization": nfhs.get("full_immunization")},
+             "supply": prof.get("supply")}
+    sys = ("You are a public-health coordinator. A district shows a high disease burden. Draft a concise ESCALATION "
+           "that makes the problem visible to the organizations that can intervene — name the RIGHT bodies for THIS "
+           "burden (e.g. for child malnutrition / anaemia+stunting: WHO, UNICEF, the state ICDS + Health Department, "
+           "and relevant nutrition NGOs), say what each should do, and which local facilities deliver it. Ground every "
+           "claim in the indicators provided; invent no numbers. Use short headings and bullet points — NO tables.")
+    usr = (f"High-burden district:\n{json.dumps(brief, ensure_ascii=False)}\n\n"
+           "Draft the multi-organization escalation + intervention, ending with who to notify first.")
+    try:
+        return llm.chat([{"role": "system", "content": sys}, {"role": "user", "content": usr}], 750)
+    except Exception:
+        return (f"Escalate the {condition} burden in {district} to the State Health Department and ICDS as the first "
+                f"responders, with WHO and UNICEF for technical + supply support and local nutrition NGOs for "
+                f"community delivery, using the district's existing facilities as the delivery network.")
+
+
+def escalate_burden(district: str, condition: str = "stunting") -> dict:
+    district = (district or "").strip()
+    trace: list[dict] = []
+    prof = agent_tools.district_profile(district)
+    nd = prof.get("nfhs") or {}
+    trace.append({"step": "assess", "role": "Assessor", "tool": "district_profile",
+                  "detail": f"{district}: {nd.get('anemia', '?')}% child anaemia, {nd.get('stunting', '?')}% stunting"})
+    plan = _reason_escalation(district, condition, prof)
+    trace.append({"step": "escalate", "role": "Coordinator", "model": MODEL,
+                  "detail": "drafted a multi-organization escalation (WHO / NGO / government)"})
+    return {"mode": "escalation", "district": district, "condition": condition, "trace": trace,
+            "profile": prof, "plan": plan}
+
+
 def outbreak_protocol(region: str, disease: str) -> dict:
     region, disease = (region or "").strip(), (disease or "disease").strip()
     trace: list[dict] = []

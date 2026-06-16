@@ -475,6 +475,35 @@ def services_overview() -> dict:
             "missing_beds": a["missing_beds"], "missing_specialty": a["missing_specialty"]}
 
 
+def disease_benchmarks(limit: int = 6) -> dict:
+    """Establish prevalence benchmarks by geography: the national baseline for each
+    condition and the worst districts above it, plus the anaemia × stunting combined
+    child-nutrition burden (they go together). From nfhs_district."""
+    conds = [("diabetes", "Diabetes — high blood sugar (women 15+)"),
+             ("hypertension", "Hypertension — high BP (women 15+)"),
+             ("anemia", "Child anaemia (6–59 months)"),
+             ("stunting", "Child stunting (under 5)")]
+    with _conn() as c, c.cursor() as cur:
+        try:
+            cur.execute("SELECT " + ", ".join(f"round(avg({k})::numeric,1)::float8 AS {k}" for k, _ in conds)
+                        + " FROM nfhs_district")
+            nat = cur.fetchone()
+        except Exception:  # noqa: BLE001 — nfhs_district / anemia not loaded
+            return {"available": False}
+        conditions = []
+        for k, label in conds:
+            cur.execute(f"SELECT district, state, round({k}::numeric,1)::float8 AS v FROM nfhs_district "
+                        f"WHERE {k} IS NOT NULL ORDER BY {k} DESC LIMIT %s", (limit,))
+            conditions.append({"key": k, "label": label, "national": nat[k], "worst": cur.fetchall()})
+        cur.execute(
+            """SELECT district, state, round(anemia::numeric,1)::float8 AS anemia,
+                      round(stunting::numeric,1)::float8 AS stunting
+               FROM nfhs_district WHERE anemia IS NOT NULL AND stunting IS NOT NULL
+               ORDER BY (anemia + stunting) DESC LIMIT %s""", (limit,))
+        nutrition = cur.fetchall()
+    return {"available": True, "conditions": conditions, "nutrition": nutrition}
+
+
 def _dkey(district: str) -> str:
     return re.sub(r"\s+", " ", (district or "").strip()).upper()
 
@@ -511,7 +540,7 @@ def district_profile(district: str) -> dict:
         nfhs = None
         try:
             cur.execute("SELECT state, district, full_immunization, bcg, penta3, diabetes, "
-                        "hypertension, institutional_birth, insurance, stunting "
+                        "hypertension, institutional_birth, insurance, stunting, anemia "
                         "FROM nfhs_district WHERE dkey=%s LIMIT 1", (dk,))
             nfhs = cur.fetchone()
         except Exception:  # noqa: BLE001
