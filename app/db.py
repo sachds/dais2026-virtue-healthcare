@@ -364,6 +364,21 @@ def desert_grid(limit_states: int = 30) -> dict:
             "n_states": len(states), "mapped_facilities": mapped}
 
 
+def state_demand(state: str) -> dict | None:
+    """NFHS-5 demand/burden for one state (normalized name match) + the need index.
+    The Referral agent's demand tool — so a recommendation can weigh how underserved
+    the surrounding population is, not just whether a facility exists."""
+    d = _load_demand().get(_norm_state(state))
+    if not d:
+        return None
+    ni = _need_index(d)
+    rnd = lambda x: round(x, 1) if x is not None else None  # noqa: E731
+    return {"state": state, "institutional_birth": rnd(d.get("institutional_birth")),
+            "anc4": rnd(d.get("anc4")), "insurance": rnd(d.get("insurance")),
+            "stunting": rnd(d.get("stunting")), "n_districts": d.get("n_districts"),
+            "need_index": round(ni, 3) if ni is not None else None}
+
+
 def readiness() -> dict:
     """Track 4 — data-readiness profile + a prioritized human-review queue:
     sparse fields, weak/suspicious claims, and over-claims (contradictions)."""
