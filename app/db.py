@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 import uuid
 
@@ -194,9 +195,63 @@ def _gap_status(trusted: int, n_scored: int) -> str:
     return "datapoor"          # too little data to call it — distinct from a real gap
 
 
+# NFHS state_ut and facility `state` are both dirty; normalize to a shared join key.
+_STATE_ALIAS = {
+    "maharastra": "maharashtra",   # NFHS misspelling vs facility "Maharashtra"
+    "nctofdelhi": "delhi",
+    "orissa": "odisha",
+    "uttaranchal": "uttarakhand",
+    "pondicherry": "puducherry",
+}
+
+
+def _norm_state(s: str | None) -> str:
+    s = (s or "").strip().lower().replace("&", "and")
+    s = re.sub(r"[^a-z]", "", s)   # drop spaces, punctuation, digits
+    return _STATE_ALIAS.get(s, s)
+
+
+def _need_index(d: dict | None) -> float | None:
+    """Demand/burden composite in 0..1 (higher = more underserved population), from the
+    NFHS indicators where 'more need' has a clear direction. Mean of available parts."""
+    if not d:
+        return None
+    parts = []
+    if d.get("institutional_birth") is not None:
+        parts.append(1 - d["institutional_birth"] / 100)   # fewer in-facility births = more unmet
+    if d.get("anc4") is not None:
+        parts.append(1 - d["anc4"] / 100)                  # less antenatal care = more unmet
+    if d.get("insurance") is not None:
+        parts.append(1 - d["insurance"] / 100)             # less coverage = more financially exposed
+    if d.get("stunting") is not None:
+        parts.append(d["stunting"] / 100)                  # more child stunting = more burden
+    if not parts:
+        return None
+    return sum(max(0.0, min(1.0, p)) for p in parts) / len(parts)
+
+
+def _quantile(sorted_vals: list[float], q: float) -> float | None:
+    if not sorted_vals:
+        return None
+    i = q * (len(sorted_vals) - 1)
+    lo = int(i); hi = min(lo + 1, len(sorted_vals) - 1)
+    return sorted_vals[lo] + (sorted_vals[hi] - sorted_vals[lo]) * (i - lo)
+
+
+def _load_demand() -> dict:
+    """state-join-key -> NFHS demand row. Empty if the overlay isn't loaded (graceful)."""
+    try:
+        with _conn() as c, c.cursor() as cur:
+            cur.execute("SELECT * FROM nfhs_state")
+            return {_norm_state(r["state"]): r for r in cur.fetchall()}
+    except Exception:  # noqa: BLE001 — table may not exist yet; map still works without demand
+        return {}
+
+
 def desert_grid(limit_states: int = 30) -> dict:
     """Trust-weighted supply aggregated by state × capability, separating confirmed
-    care gaps (enough coverage, no trusted supply) from data-poor regions (unknown)."""
+    care gaps (enough coverage, no trusted supply) from data-poor regions (unknown) —
+    then overlays NFHS-5 demand so a gap in a high-burden state ranks as HIGH-RISK."""
     with _conn() as c, c.cursor() as cur:
         cur.execute("SELECT state, count(*) n FROM facilities WHERE state IS NOT NULL AND state<>'' GROUP BY state")
         totals = {r["state"]: r["n"] for r in cur.fetchall()}
@@ -212,22 +267,74 @@ def desert_grid(limit_states: int = 30) -> dict:
         for r in cur.fetchall():
             agg.setdefault(r["state"], {})[r["capability"]] = r
 
+    demand = _load_demand()
     states = sorted((s for s in totals if s in agg), key=lambda s: -totals[s])[:limit_states]
-    rows, gaps = [], []
+
+    # demand per displayed state + tercile thresholds for the high/med/low need tier
+    need = {s: _need_index(demand.get(_norm_state(s))) for s in states}
+    have = sorted(v for v in need.values() if v is not None)
+    p33, p67 = _quantile(have, 1 / 3), _quantile(have, 2 / 3)
+
+    def tier_of(ni: float | None) -> str:
+        if ni is None or p67 is None:
+            return "unknown"
+        return "high" if ni >= p67 else ("med" if ni >= p33 else "low")
+
+    def demand_block(s: str) -> dict | None:
+        d = demand.get(_norm_state(s))
+        if not d:
+            return None
+        ni = need[s]
+        rnd = lambda x: round(x, 1) if x is not None else None  # noqa: E731
+        return {"institutional_birth": rnd(d.get("institutional_birth")),
+                "anc4": rnd(d.get("anc4")), "csection": rnd(d.get("csection")),
+                "insurance": rnd(d.get("insurance")), "stunting": rnd(d.get("stunting")),
+                "n_districts": d.get("n_districts"),
+                "need_index": round(ni, 3) if ni is not None else None,
+                "tier": tier_of(ni)}
+
+    rows, gaps, risks = [], [], []
     for s in states:
+        dem = demand_block(s)
+        ni = need[s]
         cells = {}
         for cap in CAPS:
             a = agg.get(s, {}).get(cap)
             n_scored = a["n_scored"] if a else 0
             trusted = a["trusted"] if a else 0
+            n_strong = a["n_strong"] if a else 0
             status = _gap_status(trusted, n_scored)
-            cells[cap] = {"n_scored": n_scored, "trusted": trusted,
-                          "n_strong": a["n_strong"] if a else 0, "status": status}
+            rate = (trusted / n_scored) if n_scored else None
+            # shortfall risk = health burden × thin trusted supply, where the rate is
+            # meaningful (enough evaluated) and we have demand data. A *rate*, not a count,
+            # so it's robust to how much of the state we've sampled.
+            risk = round(ni * (1 - rate), 3) if (ni is not None and n_scored >= MIN_COVERAGE) else None
+            high_risk = status == "gap" and tier_of(ni) == "high"
+            cells[cap] = {"n_scored": n_scored, "trusted": trusted, "n_strong": n_strong,
+                          "trusted_rate": round(rate, 2) if rate is not None else None,
+                          "status": status, "risk": risk, "high_risk": high_risk}
             if status == "gap":
-                gaps.append({"state": s, "capability": cap, "n_scored": n_scored, "n_total": totals[s]})
-        rows.append({"state": s, "n_total": totals[s], "cells": cells})
-    gaps.sort(key=lambda g: (-g["n_scored"], -g["n_total"]))
-    return {"caps": CAPS, "states": rows, "top_gaps": gaps[:12], "min_coverage": MIN_COVERAGE}
+                gaps.append({"state": s, "capability": cap, "n_scored": n_scored,
+                             "n_total": totals[s], "need_index": ni, "tier": tier_of(ni),
+                             "high_risk": high_risk,
+                             "institutional_birth": dem["institutional_birth"] if dem else None,
+                             "insurance": dem["insurance"] if dem else None})
+            if risk is not None:
+                risks.append({"state": s, "capability": cap, "status": status,
+                              "trusted": trusted, "n_scored": n_scored, "n_strong": n_strong,
+                              "trusted_rate": round(rate, 2), "need_index": round(ni, 3),
+                              "tier": tier_of(ni), "risk": risk,
+                              "institutional_birth": dem["institutional_birth"] if dem else None,
+                              "insurance": dem["insurance"] if dem else None,
+                              "stunting": dem["stunting"] if dem else None})
+        rows.append({"state": s, "n_total": totals[s], "cells": cells, "demand": dem})
+
+    # rank: confirmed binary gaps first, then by demand pressure / coverage
+    gaps.sort(key=lambda g: (not g["high_risk"], -(g["need_index"] or 0), -g["n_scored"]))
+    # the headline: highest shortfall risk = burden × thin trusted supply
+    risks.sort(key=lambda r: -r["risk"])
+    return {"caps": CAPS, "states": rows, "top_gaps": gaps[:12], "top_risks": risks[:12],
+            "min_coverage": MIN_COVERAGE, "demand_states": len(have)}
 
 
 def readiness() -> dict:

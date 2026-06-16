@@ -25,29 +25,50 @@ async function showDesert(){
   renderDesert(g);
 }
 function cellLabel(c){ return c.status==='served' ? String(c.trusted) : (c.status==='gap' ? '0' : '·'); }
+// served cells shade pale→deep green by share of evaluated facilities that are trusted
+function cellBg(c){
+  if(c.status!=='served') return "";                 // gap/datapoor use their CSS class
+  const r = c.trusted_rate==null ? 0.5 : c.trusted_rate;
+  const L = Math.round(74 - 36*r);                    // low rate = pale, high rate = deep
+  return `background:hsl(157 47% ${L}%);color:${L<54?'#fff':'#1f3a2e'}`;
+}
+function pct(x){ return x==null ? '—' : Math.round(x*100)+'%'; }
 function renderDesert(g){
-  const head = `<th>State</th>` + g.caps.map(c=>`<th>${esc(c)}</th>`).join("");
+  const head = `<th>State</th>` + g.caps.map(c=>`<th>${esc(c)}</th>`).join("") + `<th title="NFHS-5 health burden">need</th>`;
   const rows = g.states.map(s=>{
     const cells = g.caps.map(cap=>{
       const c = s.cells[cap];
-      const t = `${esc(s.state)} · ${esc(cap)} — ${c.trusted} trusted of ${c.n_scored} evaluated`;
-      return `<td><span class="cell ${c.status}" title="${t}" onclick="drill('${esc(s.state).replace(/'/g,'')}','${cap}')">${cellLabel(c)}</span></td>`;
+      const t = `${esc(s.state)} · ${esc(cap)} — ${c.trusted} of ${c.n_scored} evaluated show trusted evidence (${pct(c.trusted_rate)})`+(c.high_risk?' · HIGH-RISK gap':'');
+      return `<td><span class="cell ${c.status}${c.high_risk?' hr':''}" style="${cellBg(c)}" title="${t}" onclick="drill('${esc(s.state).replace(/'/g,'')}','${cap}')">${cellLabel(c)}</span></td>`;
     }).join("");
-    return `<tr><td class="st">${esc(s.state)} <span class="muted">${s.n_total}</span></td>${cells}</tr>`;
+    const d = s.demand;
+    const pill = d
+      ? `<span class="need ${d.tier}" title="NFHS-5: ${d.institutional_birth}% births in-facility · ${d.insurance}% insured · ${d.stunting}% child stunting · ${d.n_districts} districts">${d.tier}</span>`
+      : `<span class="need unknown" title="no NFHS-5 match">–</span>`;
+    return `<tr><td class="st">${esc(s.state)} <span class="muted">${s.n_total}</span></td>${cells}<td style="text-align:center">${pill}</td></tr>`;
   }).join("");
-  const gaps = (g.top_gaps||[]).map(x=>`<div class="gaprow" onclick="drill('${esc(x.state).replace(/'/g,'')}','${x.capability}')">
-     <span class="sig weak">confirmed gap</span> <b style="text-transform:capitalize">${esc(x.capability)}</b> in ${esc(x.state)}
-     <span class="muted"> — 0 trusted of ${x.n_scored} evaluated</span></div>`).join("");
+  const risks = (g.top_risks||[]).map(x=>{
+    const badge = x.status==='gap'
+      ? `<span class="sig weak">confirmed gap</span>`
+      : `<span class="risk-badge ${x.tier}">${x.tier==='high'?'high-risk':'shortfall'}</span>`;
+    const ctx = [];
+    if(x.institutional_birth!=null) ctx.push(`${x.institutional_birth}% births in-facility`);
+    if(x.insurance!=null) ctx.push(`${x.insurance}% insured`);
+    const burden = ctx.length ? ` <span class="muted">· burden ${ctx.join(' · ')}</span>` : '';
+    return `<div class="gaprow" onclick="drill('${esc(x.state).replace(/'/g,'')}','${x.capability}')">
+       ${badge} <b style="text-transform:capitalize">${esc(x.capability)}</b> in ${esc(x.state)}
+       <span class="muted"> — ${x.trusted} of ${x.n_scored} evaluated trusted (${pct(x.trusted_rate)})</span>${burden}</div>`;
+  }).join("");
   $("detail").innerHTML = `
     <p class="legend">
-      <span class="cell served">&nbsp;</span> trusted supply
+      <span class="cell served" style="background:hsl(157 47% 66%)">&nbsp;</span><span class="cell served" style="background:hsl(157 47% 40%)">&nbsp;</span> thin → robust trusted supply
       <span class="cell gap">&nbsp;</span> confirmed gap
       <span class="cell datapoor">&nbsp;</span> too little data (need ≥${g.min_coverage})
-      <span class="muted">· cell number = facilities with strong/partial evidence</span>
+      <span class="muted">· <b>need</b> = NFHS-5 health burden (${g.demand_states} states matched)</span>
     </p>
     <div class="heatwrap"><table class="heat"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>
-    <div class="evidence-lbl" style="margin:16px 16px 6px">Highest-risk confirmed gaps — click to see the facilities behind the call</div>
-    ${gaps || '<div class="muted" style="padding:0 16px 14px">No confirmed gaps yet — more facilities need scoring.</div>'}`;
+    <div class="evidence-lbl" style="margin:16px 16px 6px">Highest-risk shortfalls — health burden × thin trusted supply · click to see the facilities</div>
+    ${risks || '<div class="muted" style="padding:0 16px 14px">No demand-ranked shortfalls yet — more facilities need scoring.</div>'}`;
 }
 function drill(state, cap){
   $("state").value = state; $("capability").value = cap; $("signal").value = "";

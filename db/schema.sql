@@ -50,6 +50,19 @@ CREATE TABLE IF NOT EXISTS trust_signals (
 CREATE INDEX IF NOT EXISTS ix_ts_cap_signal ON trust_signals (capability, signal);
 CREATE INDEX IF NOT EXISTS ix_ts_facility   ON trust_signals (facility_id);
 
+-- NFHS-5 demand-side context, aggregated to state (from district fact sheets).
+-- Lets Track 2 turn "where is there no supply" into "where is the high-RISK shortfall"
+-- (low trusted supply + high health burden / low coverage). Values are percentages.
+CREATE TABLE IF NOT EXISTS nfhs_state (
+    state                 TEXT PRIMARY KEY,
+    institutional_birth   DOUBLE PRECISION,   -- % births in a facility (low = unmet maternity need)
+    anc4                  DOUBLE PRECISION,   -- % mothers with >=4 antenatal visits
+    csection              DOUBLE PRECISION,   -- % C-section
+    insurance             DOUBLE PRECISION,   -- % households with health insurance (low = vulnerable)
+    stunting              DOUBLE PRECISION,   -- % under-5 stunted (child health burden)
+    n_districts           INTEGER
+);
+
 -- Append-only user actions ("persist user actions"): overrides, notes, shortlists, decisions.
 CREATE TABLE IF NOT EXISTS reviews (
     id            TEXT PRIMARY KEY,
