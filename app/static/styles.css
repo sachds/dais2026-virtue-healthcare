@@ -174,6 +174,21 @@ td.st .muted{font-weight:400;font-size:11px}
 .db-seg{display:block;height:100%}
 .db-legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
 .db-legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:middle}
+/* clinical classification & capacity */
+.svc-flags{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.flagcard{flex:1;min-width:240px;background:#f7faff;border:1px solid var(--line);border-radius:10px;padding:10px 13px;font-size:14px}
+.flagcard.warn{background:var(--weak-bg);border-color:#f3c9c6}
+.flagcard b{font-size:15px}
+.flagcard span{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;margin-top:3px}
+.svc-table{width:100%;border-collapse:collapse;font-size:13.5px}
+.svc-table th{text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;padding:6px 8px;border-bottom:1px solid var(--line)}
+.svc-table td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+.svc-table tr:last-child td{border-bottom:0}
+.svc-table th:nth-child(3),.svc-table th:nth-child(4),.svc-table td:nth-child(3),.svc-table td:nth-child(4){text-align:right;color:#33415c}
+.svc-cat{font-weight:650}
+.svc-off{display:flex;align-items:center;gap:8px}
+.svc-bar{flex:1;max-width:200px;height:8px;background:#eef2f7;border-radius:5px;overflow:hidden}
+.svc-bar i{display:block;height:100%;background:var(--blue)}
 .cov-row{display:flex;align-items:center;gap:10px;padding:4px 0}
 .cov-f{width:130px;text-transform:capitalize;font-size:13px;color:#33415c}
 .cov-bar{flex:1;height:9px;background:#eef2f7;border-radius:5px;overflow:hidden;max-width:380px}

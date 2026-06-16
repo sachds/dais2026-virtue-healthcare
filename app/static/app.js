@@ -93,10 +93,43 @@ window.drill = drill;
 // ---- Track 4: Data Readiness Desk ---------------------------------------- //
 async function showReadiness(){
   $("readiness-body").innerHTML = `<div class="empty">Profiling the dataset…</div>`;
-  const r = await (await fetch("/api/readiness")).json();
-  renderReadiness(r);
+  const [r, s] = await Promise.all([
+    fetch("/api/readiness").then(x=>x.json()),
+    fetch("/api/services").then(x=>x.json()),
+  ]);
+  renderReadiness(r, s);
 }
-function renderReadiness(r){
+// classification + capacity + completeness (facility_services)
+function servicesSection(s){
+  if(!s || !s.available) return "";
+  const totalFac = s.total_facilities||1;
+  const cats = (s.categories||[]).map(c=>{
+    const w = Math.round(100*c.offered/totalFac);
+    return `<tr>
+      <td class="svc-cat">${esc(c.label)}</td>
+      <td><div class="svc-off"><span class="svc-bar"><i style="width:${w}%"></i></span><b>${c.offered.toLocaleString()}</b> <span class="muted">${w}%</span></div></td>
+      <td>${c.with_specialists.toLocaleString()}</td>
+      <td>${c.beds ? c.beds.toLocaleString() : '<span class="muted">—</span>'}</td>
+    </tr>`;
+  }).join("");
+  const mbpct = s.inpatient ? Math.round(100*s.missing_beds/s.inpatient) : 0;
+  return `
+    <section class="panel">
+      <h2>Clinical classification &amp; capacity — providers by service line</h2>
+      <div class="body">
+        <p class="muted" style="margin:0 0 11px"><b>${s.total_beds.toLocaleString()}</b> beds across <b>${s.with_beds.toLocaleString()}</b> facilities · avg <b>${s.avg_categories}</b> service lines per provider · specialties &amp; procedures classified into 7 categories.</p>
+        <div class="svc-flags">
+          <div class="flagcard warn"><b>${s.missing_beds.toLocaleString()} / ${s.inpatient.toLocaleString()}</b> inpatient facilities (${mbpct}%) have no bed count<span>rule · facilities must have beds</span></div>
+          <div class="flagcard ${s.missing_specialty?'warn':''}"><b>${s.missing_specialty.toLocaleString()}</b> providers have no specialty attached<span>rule · physicians must have a specialty</span></div>
+        </div>
+        <table class="svc-table">
+          <thead><tr><th>Service line</th><th>Facilities offering</th><th>with specialist</th><th>stated beds</th></tr></thead>
+          <tbody>${cats}</tbody>
+        </table>
+      </div>
+    </section>`;
+}
+function renderReadiness(r, s){
   const totalFac = OV.facilities || r.total || 0;
   const scored = OV.scored || 0;
   const d = r.signal_dist || {strong:0,partial:0,weak:0,none:0};
@@ -140,6 +173,7 @@ function renderReadiness(r){
 
   $("readiness-body").innerHTML = `
     <div class="stat-cards">${cards}</div>
+    ${servicesSection(s)}
     <div class="rd-grid">
       <section class="panel">
         <h2>Field coverage — how complete the source records are</h2>

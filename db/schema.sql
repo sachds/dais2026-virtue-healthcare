@@ -63,6 +63,24 @@ CREATE TABLE IF NOT EXISTS nfhs_state (
     n_districts           INTEGER
 );
 
+-- Clinical service-line classification + capacity per facility (from classify_facilities.py).
+-- The data-readiness layer: which of 7 categories a provider covers (specialties + procedures),
+-- bed capacity (total + per-category where stated), and completeness flags.
+CREATE TABLE IF NOT EXISTS facility_services (
+    facility_id       TEXT PRIMARY KEY,
+    facility_type     TEXT,
+    city              TEXT,
+    state             TEXT,
+    postcode          TEXT,
+    total_beds        INTEGER,
+    n_doctors         INTEGER,
+    n_categories      INTEGER,
+    services          JSONB,        -- {category: {specialties, procedures, beds, offered}}
+    missing_beds      BOOLEAN,      -- inpatient facility with no stated bed count
+    missing_specialty BOOLEAN       -- a provider with no specialty attached
+);
+CREATE INDEX IF NOT EXISTS ix_fs_state ON facility_services (state);
+
 -- Append-only user actions ("persist user actions"): overrides, notes, shortlists, decisions.
 CREATE TABLE IF NOT EXISTS reviews (
     id            TEXT PRIMARY KEY,

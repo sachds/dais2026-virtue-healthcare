@@ -418,6 +418,47 @@ def readiness() -> dict:
     return {"total": total, "coverage": coverage, "signal_dist": dist, "queue": queue, "reviewed": reviewed}
 
 
+SERVICE_CATS = ["medical", "surgical", "obgyn", "pediatrics", "dental", "diagnostic", "other"]
+SERVICE_LABEL = {"medical": "Medical", "surgical": "Surgical", "obgyn": "OB/GYN", "pediatrics": "Pediatrics",
+                 "dental": "Dental", "diagnostic": "Diagnostic", "other": "Other"}
+
+
+def services_overview() -> dict:
+    """Track 4 — clinical service-line classification + capacity (from facility_services):
+    which of the 7 categories providers cover, bed capacity, and the completeness rules
+    (an inpatient facility with no beds; a provider with no specialty)."""
+    with _conn() as c, c.cursor() as cur:
+        try:
+            cur.execute("SELECT count(*) n FROM facility_services")
+        except Exception:  # noqa: BLE001 — table not loaded yet
+            return {"available": False}
+        total = cur.fetchone()["n"]
+        if not total:
+            return {"available": False}
+        parts = []
+        for cat in SERVICE_CATS:
+            parts.append(f"count(*) FILTER (WHERE (services->'{cat}'->>'offered')='true') AS off_{cat}")
+            parts.append(f"count(*) FILTER (WHERE (services->'{cat}'->>'specialties')::int > 0) AS sp_{cat}")
+            parts.append(f"coalesce(sum((services->'{cat}'->>'beds')::int),0) AS beds_{cat}")
+        cur.execute("SELECT " + ", ".join(parts) + " FROM facility_services")
+        r = cur.fetchone()
+        categories = [{"key": cat, "label": SERVICE_LABEL[cat], "offered": r[f"off_{cat}"],
+                       "with_specialists": r[f"sp_{cat}"], "beds": r[f"beds_{cat}"]} for cat in SERVICE_CATS]
+        cur.execute(
+            """SELECT coalesce(sum(total_beds),0) total_beds,
+                      count(*) FILTER (WHERE total_beds>0) with_beds,
+                      round(avg(n_categories)::numeric,1) avg_cats,
+                      count(*) FILTER (WHERE facility_type IN ('hospital','medicalcollege','nursinghome','medicalcenter')) inpatient,
+                      count(*) FILTER (WHERE missing_beds) missing_beds,
+                      count(*) FILTER (WHERE missing_specialty) missing_specialty
+               FROM facility_services""")
+        a = cur.fetchone()
+    return {"available": True, "total_facilities": total, "categories": categories,
+            "total_beds": a["total_beds"], "with_beds": a["with_beds"],
+            "avg_categories": float(a["avg_cats"] or 0), "inpatient": a["inpatient"],
+            "missing_beds": a["missing_beds"], "missing_specialty": a["missing_specialty"]}
+
+
 def health() -> dict:
     try:
         with _conn() as c, c.cursor() as cur:
