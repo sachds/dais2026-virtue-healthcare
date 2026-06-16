@@ -26,11 +26,16 @@ nav buttons (**Gap map**, **Data readiness**) and the **Copilot** bar are the sp
 > "Each capability is scored with the **exact source text quoted** — 'Has 5 ICU beds' — plus a
 > confidence. Disagree? Override it; it's saved to Lakebase. The data is claims to verify, not truth."
 
-### 3 · Where should this patient go? — **Track 3, the live agent** *(40s)*
-- In the Copilot bar: **"emergency and ICU near Patna"**.
-> "A live agent: it plans the need, **retrieves from Lakebase**, reasons over the trust signals,
-> and returns an **evidence‑cited shortlist** — and flags a dental clinic's '24/7 emergency' as not
-> a real ER. ~9 seconds, on Claude Haiku."
+### 3 · Where should this patient go? — **Track 3, the governed agent** *(45s)*
+- In the Copilot bar: **"cancer care near Ranchi"**.
+> "Not one model call — a **governed mesh that shows its work**: it plans, retrieves from Lakebase,
+> scrutinizes each record, and a **skeptic adversarially challenges every claim**. Then a **code
+> policy gates the output**: it recommends only ✓ *vetted* facilities, ⚠ *flags* over‑claims (a
+> day‑care clinic's outpatient‑only chemo), and ✗ **blocks** what it can't stand behind — a hospital
+> whose only 'oncology' is *urologic oncology*. You see the trace, the verdicts, and what it refused."
+- Point at the trace + the **"Not recommended — blocked by policy"** row. *The same loop runs under
+  **real Omnigent*** (`./scripts/run_referral_agent.sh`) over the trust‑desk MCP — composition + control
+  on the same Lakebase substrate.
 
 ### 4 · What needs fixing first? — **Track 4, data readiness** *(30s)*
 - Hit **Data readiness**: the coverage profile + the **over‑claim queue**.
@@ -39,7 +44,9 @@ nav buttons (**Gap map**, **Data readiness**) and the **Copilot** bar are the sp
 
 ### 5 · Close *(15s)*
 > "We didn't pick a track — we built the planning system. Marketplace → Lakebase → GPT‑5.5
-> evidence extraction → a Databricks App, with a live Claude agent on top. Every number cites its source."
+> evidence extraction → a Databricks App, with a **governed multi‑agent referral mesh** on top —
+> the same loop runnable under **Omnigent** over an MCP of the trust substrate. Every number cites
+> its source, and the agent shows what it refused to recommend."
 
 ## Fallbacks
 - **Copilot slow/unavailable** → it degrades to a deterministic evidence‑ranked shortlist; don't wait on a model on stage.
