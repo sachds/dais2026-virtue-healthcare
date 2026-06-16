@@ -151,3 +151,99 @@ def siting_analysis(capability: str, state: str) -> dict:
     si["recommendation"] = _synthesize_siting(cap, state, si, top)
     si["top"] = top
     return si
+
+
+def _synthesize_route(cap: str, state: str, r: dict) -> str:
+    b, a = r["before"], r["after"]
+    sys = ("You are a logistics planner. You are given a routing plan that redistributes referral DEMAND across "
+           "trusted destinations under capacity caps, vs the naive 'everyone to the nearest' baseline. In 2-3 "
+           "sentences, state how much it relieves the chokepoint (before vs after peak load), how many referrers are "
+           "rerouted and the small cost in average travel, and that this needs NO new capacity — it just balances "
+           "what exists. Routes demand at the facility level (no individual patients exist in the data).")
+    usr = (f"Capability: {cap.upper()} · State: {state}\n"
+           f"Naive: {b['choke']} peaks at {b['max_load']} referrals, avg travel {b['avg_km']} km.\n"
+           f"Balanced: peak load drops to {a['max_load']} (at {a['choke']}), {a['rerouted']} referrers rerouted to "
+           f"the next-nearest destination, avg travel {a['avg_km']} km.\n"
+           "Write the 2-3 sentence routing recommendation (plain text, no markdown).")
+    try:
+        return llm.chat([{"role": "system", "content": sys}, {"role": "user", "content": usr}], 360)
+    except Exception:
+        return (f"Balancing the load caps {b['choke']} from {b['max_load']} down to {a['max_load']} referrals by "
+                f"rerouting {a['rerouted']} to the next-nearest trusted {cap.upper()}, for just "
+                f"{round(a['avg_km'] - b['avg_km'], 1)} km more travel on average — relieving the single point of "
+                "failure today with no new capacity.")
+
+
+def route_analysis(capability: str, state: str) -> dict:
+    """Turn the chokepoint diagnosis into ACTION — a capacity-balanced routing plan."""
+    r = db.route_load(capability, state)
+    cap = r["capability"]
+    trace = [{"step": "demand", "role": "Dispatcher", "tool": "route_load",
+              "detail": f"routing {r['n_referrer']} facilities' {cap.upper()} demand across {r['n_dest']} destinations"}]
+    if r.get("no_destination") or not r.get("nodes"):
+        r["trace"] = trace
+        r["recommendation"] = f"No trusted {cap.upper()} destinations in {state} to route across."
+        return r
+    b, a = r["before"], r["after"]
+    trace.append({"step": "naive", "role": "Baseline", "tool": "nearest",
+                  "detail": f"naive nearest-routing overloads {b['choke']} at {b['max_load']} referrals"})
+    # honest case: too few credible destinations → you can't route your way out, you need capacity
+    if b["max_load"] - a["max_load"] <= 0:
+        trace.append({"step": "balance", "role": "Optimizer", "tool": "capacity-cap",
+                      "detail": f"only {r['n_dest']} credible destination(s) for {r['n_referrer']} referrers — "
+                                "rebalancing can't lower the peak"})
+        r["trace"] = trace
+        r["no_relief"] = True
+        r["recommendation"] = (
+            f"Routing can't relieve {state}'s {cap.upper()} chokepoint: with only {r['n_dest']} credible "
+            f"{cap.upper()} destination(s) for {r['n_referrer']} referrers, every node still has to carry ~{r['cap']} "
+            "even when load is balanced. This is a capacity problem, not a routing one — use Add capacity to site a "
+            "new destination.")
+        return r
+    trace.append({"step": "balance", "role": "Optimizer", "tool": "capacity-cap",
+                  "detail": f"capped each destination at fair-share ({r['cap']}) → peak {b['max_load']}→{a['max_load']}, "
+                            f"{a['rerouted']} rerouted, avg travel {b['avg_km']}→{a['avg_km']} km"})
+    trace.append({"step": "synthesize", "role": "Composer", "model": MODEL, "detail": "wrote the routing plan"})
+    r["trace"] = trace
+    r["recommendation"] = _synthesize_route(cap, state, r)
+    return r
+
+
+def _synthesize_circuit(cap: str, state: str, c: dict) -> str:
+    stops = c.get("stops", [])
+    avg_iso = round(sum(s["from_care_km"] for s in stops) / len(stops), 1) if stops else 0
+    sys = ("You are planning a visiting-specialist circuit (a medical-mission itinerary). You are given an ordered "
+           "route from a hub through the most ISOLATED underserved facilities, with total distance and a day count. "
+           "In 2-3 sentences, describe the circuit concretely — how many facilities it reaches, the total distance and "
+           "days, and that these stops currently sit far from any trusted destination. It is a planned itinerary over "
+           "facilities + geography (no provider calendars exist to book against).")
+    usr = (f"Capability: {cap.upper()} · State: {state}\n"
+           f"Circuit from hub {c['hub']['name']} ({c['hub'].get('city') or ''}): {c['n_served']} stops, "
+           f"{c['total_km']} km round-trip, {c['days']} day(s); the stops average {avg_iso} km from the nearest "
+           f"trusted {cap.upper()} today.\nWrite the 2-3 sentence circuit recommendation (plain text, no markdown).")
+    try:
+        return llm.chat([{"role": "system", "content": sys}, {"role": "user", "content": usr}], 360)
+    except Exception:
+        return (f"A {c['n_served']}-stop visiting-{cap.upper()} circuit from {c['hub']['name']} covers the most "
+                f"isolated facilities in {c['total_km']} km over {c['days']} day(s) — reaching sites currently "
+                f"~{avg_iso} km from any trusted {cap.upper()}.")
+
+
+def circuit_analysis(capability: str, state: str) -> dict:
+    """Schedule a visiting-provider circuit through the most isolated underserved facilities."""
+    c = db.provider_circuit(capability, state)
+    cap = c["capability"]
+    trace = [{"step": "isolate", "role": "Planner", "tool": "provider_circuit",
+              "detail": f"ranked {c['n_referrer']} facilities by isolation from trusted {cap.upper()}"}]
+    if c.get("no_destination") or not c.get("stops"):
+        c["trace"] = trace
+        c["recommendation"] = f"Not enough {cap.upper()} supply/demand in {state} to schedule a circuit."
+        return c
+    trace.append({"step": "route", "role": "Router", "tool": "nearest-neighbour",
+                  "detail": f"built a {c['n_served']}-stop circuit from {c['hub']['name']} — {c['total_km']} km"})
+    trace.append({"step": "schedule", "role": "Scheduler", "tool": "day-buckets",
+                  "detail": f"scheduled across {c['days']} day(s)"})
+    trace.append({"step": "synthesize", "role": "Composer", "model": MODEL, "detail": "wrote the circuit plan"})
+    c["trace"] = trace
+    c["recommendation"] = _synthesize_circuit(cap, state, c)
+    return c

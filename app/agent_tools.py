@@ -99,6 +99,19 @@ def siting_impact(capability: str, state: str) -> dict:
     return db.siting_impact(capability, state)
 
 
+def route_load(capability: str, state: str) -> dict:
+    """ACT on the network: route referral demand across destinations under capacity caps so
+    load spreads off the chokepoint — the balanced routing plan vs naive nearest, with the
+    single-point-of-failure relief. Routes demand at facility level (no individual patients)."""
+    return db.route_load(capability, state)
+
+
+def provider_circuit(capability: str, state: str) -> dict:
+    """Schedule a visiting-specialist circuit: an ordered, day-bucketed itinerary from a hub
+    through the most isolated underserved facilities for this capability."""
+    return db.provider_circuit(capability, state)
+
+
 # Tool registry — names → callables, used by mcp_server.py and the copilot trace.
 TOOLS = {
     "find_facilities": find_facilities,
@@ -109,4 +122,6 @@ TOOLS = {
     "district_profile": district_profile,
     "referral_network": referral_network,
     "siting_impact": siting_impact,
+    "route_load": route_load,
+    "provider_circuit": provider_circuit,
 }

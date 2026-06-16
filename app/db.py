@@ -1080,6 +1080,154 @@ def siting_impact(capability: str, state: str, top: int = 6, max_candidates: int
             "sites": out[:top]}
 
 
+def _net_split(cap: str, state: str, max_referrers: int = 600):
+    """Shared loader for the routing/circuit planners: facilities in `state` split into
+    trusted-C destinations (with beds) vs referrers, all with coordinates."""
+    with _conn() as c, c.cursor() as cur:
+        cur.execute(
+            """SELECT f.id, f.name, f.city, f.facility_type, f.latitude, f.longitude,
+                      max(CASE WHEN t.capability=%s AND t.signal IN ('strong','partial') THEN 1 ELSE 0 END) AS trusted,
+                      max(CASE WHEN t.capability=%s AND t.signal='strong' THEN 2
+                               WHEN t.capability=%s AND t.signal='partial' THEN 1 ELSE 0 END) AS sigrank,
+                      coalesce(max(fs.total_beds),0) AS beds
+               FROM facilities f
+               LEFT JOIN trust_signals t ON t.facility_id=f.id
+               LEFT JOIN facility_services fs ON fs.facility_id=f.id
+               WHERE f.state=%s AND f.latitude IS NOT NULL AND f.longitude IS NOT NULL
+               GROUP BY f.id, f.name, f.city, f.facility_type, f.latitude, f.longitude""",
+            (cap, cap, cap, state))
+        rows = cur.fetchall()
+    for r in rows:
+        r["lat"], r["lon"] = float(r["latitude"]), float(r["longitude"])
+    dests = [r for r in rows if r["trusted"] == 1]
+    referrers = [r for r in rows if r["trusted"] == 0]
+    return dests, referrers[:max_referrers], len(referrers)
+
+
+def route_load(capability: str, state: str, balance: float = 1.1) -> dict:
+    """ROUTE the referral demand: instead of 'everyone to the nearest' (which creates the
+    chokepoint), assign each referrer to a credible destination under a fair-share capacity
+    cap, so load spreads OFF the single-point-of-failure. Returns the naive vs balanced load
+    per destination + the relief — a routing plan that relieves the SPOF with no new capacity.
+    (Routes DEMAND, not individually-identified patients — we have none. Destinations are
+    restricted to hospital-type facilities — don't route a critical case to a clinic.)"""
+    cap = capability if capability in CAPS else "icu"
+    dests, referrers, n_ref_total = _net_split(cap, state)
+    dests = [d for d in dests if (d["facility_type"] or "").lower() in _HOSPITAL_TYPES] or dests
+    base = {"available": True, "capability": cap, "state": state,
+            "n_dest": len(dests), "n_referrer": len(referrers)}
+    if not dests or not referrers:
+        return {**base, "no_destination": not dests, "nodes": [], "reroutes": []}
+
+    # rank destinations by distance for every referrer; naive load = nearest
+    for d in dests:
+        d["naive"] = 0
+        d["bal"] = 0
+    for r in referrers:
+        ranked = sorted(((((r["lat"] - d["lat"]) ** 2 + (r["lon"] - d["lon"]) ** 2) ** 0.5 * 111, d) for d in dests),
+                        key=lambda x: x[0])
+        r["_ranked"] = ranked
+        r["_naive"] = ranked[0][1]
+        r["_naive_km"] = ranked[0][0]
+        ranked[0][1]["naive"] += 1
+
+    total = len(referrers)
+    # flat fair-share cap (+ slack) — bounds every node's load, so the peak actually drops.
+    # beds are too sparse to use as capacity here; fair-share is robust and honest.
+    cap_each = max(1, int(total / len(dests) * balance + 0.999))
+    for d in dests:
+        d["cap"] = cap_each
+
+    # balanced greedy: closest pairs claim first; overflow to next dest with capacity
+    reroutes = []
+    for r in sorted(referrers, key=lambda r: r["_ranked"][0][0]):
+        chosen, chosen_km = None, None
+        for km, d in r["_ranked"]:
+            if d["bal"] < d["cap"]:
+                chosen, chosen_km = d, km
+                break
+        if chosen is None:
+            chosen, chosen_km = r["_ranked"][0][1], r["_ranked"][0][0]
+        chosen["bal"] += 1
+        r["_bal"], r["_bal_km"] = chosen, chosen_km
+        if chosen["id"] != r["_naive"]["id"]:
+            reroutes.append({"from": r["name"], "city": r.get("city"),
+                             "was": r["_naive"]["name"], "now": chosen["name"],
+                             "extra_km": round(chosen_km - r["_naive_km"], 1)})
+
+    nodes = sorted(dests, key=lambda d: -d["naive"])
+    node_out = [{"name": d["name"], "city": d["city"], "trust": "strong" if d["sigrank"] == 2 else "partial",
+                 "naive": d["naive"], "balanced": d["bal"], "beds": _clamp_int(d["beds"])} for d in nodes]
+    naive_choke = nodes[0]
+    bal_max = max(dests, key=lambda d: d["bal"])
+    naive_avg = round(sum(r["_naive_km"] for r in referrers) / total, 1)
+    bal_avg = round(sum(r["_bal_km"] for r in referrers) / total, 1)
+    reroutes.sort(key=lambda x: x["extra_km"])
+    return {**base, "no_destination": False, "nodes": node_out, "cap": cap_each,
+            "before": {"choke": naive_choke["name"], "max_load": naive_choke["naive"], "avg_km": naive_avg},
+            "after": {"choke": bal_max["name"], "max_load": bal_max["bal"], "avg_km": bal_avg,
+                      "rerouted": len(reroutes)},
+            "reroutes": reroutes[:6]}
+
+
+def provider_circuit(capability: str, state: str, max_stops: int = 6, per_day: int = 2) -> dict:
+    """SCHEDULE a visiting provider: pick the most ISOLATED underserved facilities (furthest
+    from any trusted C), route a circuit through them from a hub (the main center), and bucket
+    into days — an ordered, scheduled itinerary for a mobile specialist / medical mission.
+    Plans over facilities + geography (no provider calendars exist to book against)."""
+    cap = capability if capability in CAPS else "icu"
+    dests, referrers, _ = _net_split(cap, state)
+    dests = [d for d in dests if (d["facility_type"] or "").lower() in _HOSPITAL_TYPES] or dests
+    base = {"available": True, "capability": cap, "state": state, "n_dest": len(dests),
+            "n_referrer": len(referrers), "stops": []}
+    if not dests or not referrers:
+        return {**base, "no_destination": not dests}
+
+    for d in dests:
+        d["deg"] = 0
+    for r in referrers:
+        nearest = min(dests, key=lambda d: (r["lat"] - d["lat"]) ** 2 + (r["lon"] - d["lon"]) ** 2)
+        r["_curkm"] = ((r["lat"] - nearest["lat"]) ** 2 + (r["lon"] - nearest["lon"]) ** 2) ** 0.5 * 111
+        nearest["deg"] += 1
+    hub = max(dests, key=lambda d: d["deg"])     # deploy from the main center
+    # the most isolated HOSPITALS, one per city (a visiting specialist needs a host facility,
+    # not an eye clinic; don't schedule two stops in the same town)
+    hosts = [r for r in referrers if (r["facility_type"] or "").lower() in _HOSPITAL_TYPES] or referrers
+    selected, seen = [], set()
+    for r in sorted(hosts, key=lambda r: -r["_curkm"]):
+        ck = (r.get("city") or r["id"]).strip().lower()
+        if ck in seen:
+            continue
+        seen.add(ck)
+        selected.append(r)
+        if len(selected) >= max_stops:
+            break
+
+    # nearest-neighbour circuit from the hub through the selected stops
+    stops, cur, remaining, cum = [], hub, selected[:], 0.0
+    while remaining:
+        nxt = min(remaining, key=lambda r: (cur["lat"] - r["lat"]) ** 2 + (cur["lon"] - r["lon"]) ** 2)
+        leg = ((cur["lat"] - nxt["lat"]) ** 2 + (cur["lon"] - nxt["lon"]) ** 2) ** 0.5 * 111
+        cum += leg
+        stops.append({"id": nxt["id"], "name": nxt["name"], "city": nxt["city"],
+                      "lat": round(nxt["lat"], 4), "lon": round(nxt["lon"], 4),
+                      "leg_km": round(leg, 1), "cum_km": round(cum, 1),
+                      "from_care_km": round(nxt["_curkm"], 1), "day": max(1, -(-int(cum) // 300))})
+        cur = nxt
+        remaining.remove(nxt)
+    return_leg = ((cur["lat"] - hub["lat"]) ** 2 + (cur["lon"] - hub["lon"]) ** 2) ** 0.5 * 111
+    geometry = [[round(hub["lat"], 4), round(hub["lon"], 4)]] + [[s["lat"], s["lon"]] for s in stops] \
+        + [[round(hub["lat"], 4), round(hub["lon"], 4)]]
+    total_km = round(cum + return_leg)
+    # a realistic mission day = a few hundred km of travel + the visits themselves
+    days = max((len(stops) - 1) // per_day + 1, -(-total_km // 300)) if stops else 0
+    return {**base, "no_destination": False,
+            "hub": {"name": hub["name"], "city": hub["city"],
+                    "lat": round(hub["lat"], 4), "lon": round(hub["lon"], 4)},
+            "stops": stops, "n_served": len(stops), "total_km": total_km,
+            "days": days, "geometry": geometry}
+
+
 def network_states(capability: str, limit: int = 14) -> list[dict]:
     """States with a meaningful referral funnel for C (enough referrers, few enough
     trusted destinations) — the picklist for the Care-Network view, worst funnel first."""

@@ -582,7 +582,7 @@ $("cp-ask").onclick=runCopilot;
 $("cp-q").addEventListener("keydown",e=>{if(e.key==="Enter")runCopilot();});
 
 // ---- Care Network: coordinated Copilot instances → the system view -------- //
-let _nwLoaded=false, _nwLeaflet=null;
+let _nwLoaded=false, _nwLeaflet=null, _nwRoute=null;
 async function showNetwork(){
   if(_nwLoaded) return;                 // preserve the current result when tabbing back
   _nwLoaded=true;
@@ -639,10 +639,99 @@ function renderNetwork(r){
        <span class="muted">· bubble = referral load · grey = referring facility · click a chokepoint for its evidence</span></p>
      <div class="evidence-lbl" style="margin:14px 16px 4px">Chokepoints — the destinations the region depends on · click any for its cited evidence</div>
      ${bn}
-     <div class="nw-site-cta"><button class="btn" onclick="runSiting()">⊕ Where should the next ${cap} go?</button>
-       <span class="muted">Counterfactual — the highest‑impact existing facility to resource next.</span></div>
-     <div id="nw-siting"></div>`;
+     <div class="nw-act">
+       <span class="nw-act-lbl">Act on this →</span>
+       <button class="btn ghost" onclick="runRoute()">⤳ Balance the load</button>
+       <button class="btn ghost" onclick="runCircuit()">🗓 Provider circuit</button>
+       <button class="btn ghost" onclick="runSiting()">⊕ Add capacity</button>
+     </div>
+     <div id="nw-routing"></div><div id="nw-circuit"></div><div id="nw-siting"></div>`;
   drawNetworkMap(r);
+}
+async function runRoute(){
+  const cap=$("nw-cap").value, state=$("nw-state").value, el=$("nw-routing"); if(!el) return;
+  showLoading("nw-routing", ["Modeling naive nearest‑routing","Capping each destination by fair‑share capacity","Re‑routing demand off the chokepoint","Writing the routing plan"], "Dispatch optimizer");
+  el.scrollIntoView({behavior:"smooth",block:"center"});
+  try{ const r=await (await fetch("/api/route",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({capability:cap,state})})).json(); stopLoading(); renderRoute(r); }
+  catch(e){ stopLoading(); el.innerHTML=`<div class="empty">Routing error: ${esc(e.message)}</div>`; }
+}
+async function runCircuit(){
+  const cap=$("nw-cap").value, state=$("nw-state").value, el=$("nw-circuit"); if(!el) return;
+  showLoading("nw-circuit", ["Ranking facilities by isolation","Routing a nearest‑neighbour circuit","Scheduling the stops into days","Writing the circuit plan"], "Circuit scheduler");
+  el.scrollIntoView({behavior:"smooth",block:"center"});
+  try{ const r=await (await fetch("/api/circuit",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({capability:cap,state})})).json(); stopLoading(); renderCircuit(r); }
+  catch(e){ stopLoading(); el.innerHTML=`<div class="empty">Circuit error: ${esc(e.message)}</div>`; }
+}
+window.runRoute=runRoute; window.runCircuit=runCircuit;
+function renderRoute(r){
+  const cap=(r.capability||'').toUpperCase();
+  if(r.no_destination || !(r.nodes||[]).length){ $("nw-routing").innerHTML=`<div class="empty" style="margin:12px 16px">${esc(r.recommendation||'No credible destinations to route across.')}</div>`; return; }
+  const trace=(r.trace||[]).map(traceStep).join("");
+  const b=r.before, a=r.after, max=Math.max(b.max_load,1);
+  if(r.no_relief){
+    $("nw-routing").innerHTML=`
+      <section class="panel" style="margin:14px 16px">
+        <h2>⤳ Balance the load — capacity‑aware routing</h2>
+        <div class="body">
+          <div class="cp-trace" style="margin-left:0">${trace}</div>
+          <div class="nw-rec warn"><div class="nw-rec-h">⤳ Routing can't fix this one</div>${esc(r.recommendation||'')}</div>
+        </div>
+      </section>`;
+    return;
+  }
+  const bars=(r.nodes||[]).slice(0,8).map(n=>`
+    <div class="rt-row">
+      <span class="rt-name">${esc(n.name)} <span class="muted">${esc(n.city||'')}</span></span>
+      <span class="rt-bars">
+        <span class="rt-track"><i class="rt-naive" style="width:${Math.round(100*n.naive/max)}%"></i></span>
+        <span class="rt-track"><i class="rt-bal" style="width:${Math.round(100*n.balanced/max)}%"></i></span>
+      </span>
+      <span class="rt-num"><b>${n.naive}</b>→<b class="g">${n.balanced}</b></span>
+    </div>`).join("");
+  $("nw-routing").innerHTML=`
+    <section class="panel" style="margin:14px 16px">
+      <h2>⤳ Balance the load — capacity‑aware routing</h2>
+      <div class="body">
+        <div class="cp-trace" style="margin-left:0">${trace}</div>
+        ${r.recommendation?`<div class="nw-rec"><div class="nw-rec-h">⤳ Routing plan</div>${esc(r.recommendation)}</div>`:""}
+        <div class="rt-head">Peak load <b class="r">${b.max_load}</b> → <b class="g">${a.max_load}</b> · cap ${r.cap}/destination · ${a.rerouted} rerouted · avg travel ${b.avg_km}→${a.avg_km} km</div>
+        <div class="evidence-lbl" style="margin:10px 0 6px">Load per destination — <span style="color:var(--weak)">naive nearest</span> vs <span style="color:var(--strong)">balanced</span></div>
+        ${bars}
+        <div class="muted" style="margin-top:10px;font-size:12px">Routes demand across credible hospital destinations; capacity = fair share (bed counts too sparse to weight). No individual patients in the data.</div>
+      </div>
+    </section>`;
+}
+function renderCircuit(r){
+  const cap=(r.capability||'').toUpperCase();
+  if(r.no_destination || !(r.stops||[]).length){ $("nw-circuit").innerHTML=`<div class="empty" style="margin:12px 16px">${esc(r.recommendation||'Not enough supply/demand to schedule a circuit.')}</div>`; return; }
+  const trace=(r.trace||[]).map(traceStep).join("");
+  const stops=(r.stops||[]).map((s,i)=>`
+    <div class="ci-row" onclick="selectFacility('${esc(s.id)}')">
+      <span class="ci-day">Day ${s.day}</span>
+      <span class="ci-stop"><b>${i+1}. ${esc(s.name)}</b> <span class="muted">${esc(s.city||'')}</span>
+        <div class="muted">leg ${s.leg_km} km · ${s.from_care_km} km from nearest ${cap} today</div></span>
+    </div>`).join("");
+  $("nw-circuit").innerHTML=`
+    <section class="panel" style="margin:14px 16px">
+      <h2>🗓 Provider circuit — visiting ${cap} itinerary</h2>
+      <div class="body">
+        <div class="cp-trace" style="margin-left:0">${trace}</div>
+        ${r.recommendation?`<div class="nw-rec"><div class="nw-rec-h">🗓 Scheduled circuit</div>${esc(r.recommendation)}</div>`:""}
+        <div class="rt-head">From <b>${esc(r.hub.name)}</b> ${esc(r.hub.city||'')} · ${r.n_served} stops · ${r.total_km.toLocaleString()} km · ${r.days} day(s)</div>
+        <div class="evidence-lbl" style="margin:10px 0 6px">Itinerary · click any stop for its record · route drawn on the map above</div>
+        ${stops}
+        <div class="muted" style="margin-top:10px;font-size:12px">A planned circuit over facilities + geography — no provider calendars exist to book against.</div>
+      </div>
+    </section>`;
+  // draw the route on the network map
+  if(_nwLeaflet && window.L){
+    if(_nwRoute){ try{_nwRoute.forEach(l=>_nwLeaflet.removeLayer(l));}catch(e){} }
+    _nwRoute=[];
+    const line=L.polyline((r.geometry||[]),{color:'#7c3aed',weight:2.5,opacity:0.8,dashArray:'6 4'}).addTo(_nwLeaflet); _nwRoute.push(line);
+    (r.stops||[]).forEach((s,i)=>{ const m=L.marker([s.lat,s.lon]).bindTooltip(`Day ${s.day} · stop ${i+1}: ${s.name}${s.city?', '+s.city:''}`); const cm=L.circleMarker([s.lat,s.lon],{radius:9,color:'#7c3aed',weight:2,fillColor:'#fff',fillOpacity:1}).bindTooltip(`Day ${s.day} · #${i+1} ${s.name}`).addTo(_nwLeaflet); _nwRoute.push(cm); });
+    const hub=r.hub; if(hub){ const h=L.circleMarker([hub.lat,hub.lon],{radius:11,color:'#7c3aed',weight:3,fillColor:'#7c3aed',fillOpacity:0.6}).bindTooltip(`Hub: ${hub.name}`).addTo(_nwLeaflet); _nwRoute.push(h); }
+    try{ _nwLeaflet.invalidateSize(); }catch(e){}
+  }
 }
 async function runSiting(){
   const cap=$("nw-cap").value, state=$("nw-state").value, el=$("nw-siting");

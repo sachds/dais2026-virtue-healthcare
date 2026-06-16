@@ -208,9 +208,29 @@ textarea{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 1
 .nw-site-cta .muted{font-size:12.5px}
 .nw-rec{margin:10px 0;padding:12px 15px;background:var(--strong-bg);border:1px solid #bfe6d4;border-left:3px solid var(--strong);border-radius:10px;font-size:14px;line-height:1.55;color:#13503b}
 .nw-rec-h{font-weight:800;font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--strong);margin-bottom:5px}
+.nw-rec.warn{background:var(--partial-bg);border-color:#f3d9a8;border-left-color:var(--partial);color:#6b5212}
+.nw-rec.warn .nw-rec-h{color:var(--partial)}
 .nw-row.site{margin:8px 0}
 .nw-row.site .nw-deg b{color:var(--strong)}
 .nw-row.site.best{border-color:#bfe6d4;background:var(--strong-bg)}
+/* Care Network — action row (route / circuit / site) */
+.nw-act{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin:16px 16px 4px;padding-top:14px;border-top:1px solid var(--line)}
+.nw-act-lbl{font-size:12.5px;font-weight:700;color:var(--ink)}
+.rt-head{font-size:13px;color:#33415c;margin:6px 0 2px}
+.rt-head .r{color:var(--weak)} .rt-head .g{color:var(--strong)}
+.rt-row{display:flex;align-items:center;gap:10px;padding:4px 0}
+.rt-name{flex:0 0 38%;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rt-bars{flex:1;display:flex;flex-direction:column;gap:3px}
+.rt-track{height:8px;background:var(--none-bg);border-radius:999px;overflow:hidden}
+.rt-track i{display:block;height:100%;border-radius:999px}
+.rt-naive{background:var(--weak)} .rt-bal{background:var(--strong)}
+.rt-num{flex:0 0 64px;text-align:right;font-size:12.5px;color:var(--muted)}
+.rt-num .g{color:var(--strong)}
+.ci-row{display:flex;gap:11px;align-items:flex-start;padding:9px 11px;margin-bottom:6px;border:1px solid var(--line);border-left:3px solid #7c3aed;border-radius:9px;cursor:pointer;background:#fbfaff}
+.ci-row:hover{background:#f5f2ff}
+.ci-day{flex:none;font-size:11px;font-weight:700;color:#6d28d9;background:#f0ebff;border-radius:999px;padding:2px 9px;margin-top:1px}
+.ci-stop{flex:1;font-size:13px}
+.ci-stop .muted{font-size:11.5px;margin-top:1px}
 /* Your shortlist (saved work) */
 .shortlist-bar{display:none}
 .shortlist-bar.on{display:flex;gap:7px;align-items:center;flex-wrap:wrap;padding:10px 13px;margin-bottom:12px;background:var(--panel);border:1px solid var(--line);border-radius:12px}
