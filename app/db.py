@@ -254,7 +254,7 @@ def desert_grid(limit_states: int = 30) -> dict:
     then overlays NFHS-5 demand so a gap in a high-burden state ranks as HIGH-RISK."""
     with _conn() as c, c.cursor() as cur:
         cur.execute("SELECT state, count(*) n FROM facilities WHERE state IS NOT NULL AND state<>'' GROUP BY state")
-        totals = {r["state"]: r["n"] for r in cur.fetchall()}
+        raw_totals = cur.fetchall()
         cur.execute(
             """SELECT f.state, t.capability,
                       count(*) AS n_scored,
@@ -263,15 +263,40 @@ def desert_grid(limit_states: int = 30) -> dict:
                FROM facilities f JOIN trust_signals t ON t.facility_id=f.id
                WHERE f.state IS NOT NULL AND f.state<>''
                GROUP BY f.state, t.capability""")
-        agg: dict = {}
-        for r in cur.fetchall():
-            agg.setdefault(r["state"], {})[r["capability"]] = r
+        raw_agg = cur.fetchall()
 
     demand = _load_demand()
-    states = sorted((s for s in totals if s in agg), key=lambda s: -totals[s])[:limit_states]
+    # Facility `state` is dirty (250+ spellings: "Tamilnadu" vs "Tamil Nadu", &/and variants,
+    # even city names like "Mumbai"). Collapse to a canonical key; when NFHS demand is loaded
+    # (the real 36 states/UTs) keep only keys that match one — dropping city-as-state junk.
+    # Display label = the most common raw spelling for that key. Falls back to raw if no demand.
+    restrict = bool(demand)
+    totals: dict = {}
+    name_votes: dict = {}
+    for r in raw_totals:
+        k = _norm_state(r["state"])
+        if restrict and k not in demand:
+            continue
+        totals[k] = totals.get(k, 0) + r["n"]
+        name_votes.setdefault(k, {})[r["state"].strip()] = r["n"]
+    display = {k: max(v, key=v.get) for k, v in name_votes.items()}
+    mapped = sum(totals.values())
+
+    agg: dict = {}
+    for r in raw_agg:
+        k = _norm_state(r["state"])
+        if restrict and k not in demand:
+            continue
+        cell = agg.setdefault(k, {}).setdefault(
+            r["capability"], {"n_scored": 0, "n_strong": 0, "trusted": 0})
+        cell["n_scored"] += r["n_scored"]
+        cell["n_strong"] += r["n_strong"]
+        cell["trusted"] += r["trusted"]
+
+    states = sorted((k for k in totals if k in agg), key=lambda k: -totals[k])[:limit_states]
 
     # demand per displayed state + tercile thresholds for the high/med/low need tier
-    need = {s: _need_index(demand.get(_norm_state(s))) for s in states}
+    need = {k: _need_index(demand.get(k)) for k in states}
     have = sorted(v for v in need.values() if v is not None)
     p33, p67 = _quantile(have, 1 / 3), _quantile(have, 2 / 3)
 
@@ -280,11 +305,11 @@ def desert_grid(limit_states: int = 30) -> dict:
             return "unknown"
         return "high" if ni >= p67 else ("med" if ni >= p33 else "low")
 
-    def demand_block(s: str) -> dict | None:
-        d = demand.get(_norm_state(s))
+    def demand_block(k: str) -> dict | None:
+        d = demand.get(k)
         if not d:
             return None
-        ni = need[s]
+        ni = need[k]
         rnd = lambda x: round(x, 1) if x is not None else None  # noqa: E731
         return {"institutional_birth": rnd(d.get("institutional_birth")),
                 "anc4": rnd(d.get("anc4")), "csection": rnd(d.get("csection")),
@@ -294,12 +319,13 @@ def desert_grid(limit_states: int = 30) -> dict:
                 "tier": tier_of(ni)}
 
     rows, gaps, risks = [], [], []
-    for s in states:
-        dem = demand_block(s)
-        ni = need[s]
+    for k in states:
+        name = display[k]
+        dem = demand_block(k)
+        ni = need[k]
         cells = {}
         for cap in CAPS:
-            a = agg.get(s, {}).get(cap)
+            a = agg.get(k, {}).get(cap)
             n_scored = a["n_scored"] if a else 0
             trusted = a["trusted"] if a else 0
             n_strong = a["n_strong"] if a else 0
@@ -314,27 +340,28 @@ def desert_grid(limit_states: int = 30) -> dict:
                           "trusted_rate": round(rate, 2) if rate is not None else None,
                           "status": status, "risk": risk, "high_risk": high_risk}
             if status == "gap":
-                gaps.append({"state": s, "capability": cap, "n_scored": n_scored,
-                             "n_total": totals[s], "need_index": ni, "tier": tier_of(ni),
+                gaps.append({"state": name, "capability": cap, "n_scored": n_scored,
+                             "n_total": totals[k], "need_index": ni, "tier": tier_of(ni),
                              "high_risk": high_risk,
                              "institutional_birth": dem["institutional_birth"] if dem else None,
                              "insurance": dem["insurance"] if dem else None})
             if risk is not None:
-                risks.append({"state": s, "capability": cap, "status": status,
+                risks.append({"state": name, "capability": cap, "status": status,
                               "trusted": trusted, "n_scored": n_scored, "n_strong": n_strong,
                               "trusted_rate": round(rate, 2), "need_index": round(ni, 3),
                               "tier": tier_of(ni), "risk": risk,
                               "institutional_birth": dem["institutional_birth"] if dem else None,
                               "insurance": dem["insurance"] if dem else None,
                               "stunting": dem["stunting"] if dem else None})
-        rows.append({"state": s, "n_total": totals[s], "cells": cells, "demand": dem})
+        rows.append({"state": name, "n_total": totals[k], "cells": cells, "demand": dem})
 
     # rank: confirmed binary gaps first, then by demand pressure / coverage
     gaps.sort(key=lambda g: (not g["high_risk"], -(g["need_index"] or 0), -g["n_scored"]))
     # the headline: highest shortfall risk = burden × thin trusted supply
     risks.sort(key=lambda r: -r["risk"])
     return {"caps": CAPS, "states": rows, "top_gaps": gaps[:12], "top_risks": risks[:12],
-            "min_coverage": MIN_COVERAGE, "demand_states": len(have)}
+            "min_coverage": MIN_COVERAGE, "demand_states": len(have),
+            "n_states": len(states), "mapped_facilities": mapped}
 
 
 def readiness() -> dict:
