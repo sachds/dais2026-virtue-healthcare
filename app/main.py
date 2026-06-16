@@ -96,6 +96,20 @@ async def get_shortlist(name: str = "default"):
     return JSONResponse({"shortlist": await asyncio.to_thread(db.shortlist, name)})
 
 
+@app.get("/api/network/states")
+async def network_states(capability: str = "icu"):
+    return JSONResponse({"states": await asyncio.to_thread(db.network_states, capability)})
+
+
+@app.post("/api/network")
+async def network(payload: dict):
+    state = (payload.get("state") or "").strip()
+    if not state:
+        return JSONResponse({"error": "state required"}, status_code=400)
+    from app import network as net
+    return JSONResponse(await asyncio.to_thread(net.network_analysis, payload.get("capability", "icu"), state))
+
+
 @app.post("/api/copilot")
 async def copilot(payload: dict):
     q = (payload.get("query") or "").strip()

@@ -32,6 +32,7 @@ function showView(name){
   activate(name);
   if(name==="desert") showDesert();
   else if(name==="readiness") showReadiness();
+  else if(name==="network") showNetwork();
   else if(name==="publichealth") showPublicHealth();
   else if(name==="trust" && !$("list").querySelector(".fac")) loadFacilities();
   window.scrollTo(0,0);
@@ -552,6 +553,92 @@ function renderCopilot(r){
 window.cpEx=(q)=>{$("cp-q").value=q;runCopilot();};
 $("cp-ask").onclick=runCopilot;
 $("cp-q").addEventListener("keydown",e=>{if(e.key==="Enter")runCopilot();});
+
+// ---- Care Network: coordinated Copilot instances → the system view -------- //
+let _nwLoaded=false, _nwLeaflet=null;
+async function showNetwork(){
+  if(_nwLoaded) return;                 // preserve the current result when tabbing back
+  _nwLoaded=true;
+  $("nw-cap").onchange=()=>loadNetworkStates(true);
+  await loadNetworkStates(true);        // populate states (worst funnel first) + auto-run
+}
+async function loadNetworkStates(autorun){
+  const cap=$("nw-cap").value, sel=$("nw-state");
+  sel.innerHTML=`<option value="">loading…</option>`;
+  const {states=[]}=await (await fetch("/api/network/states?capability="+encodeURIComponent(cap))).json();
+  sel.innerHTML = states.length
+    ? states.map(s=>`<option value="${esc(s.state)}">${esc(s.state)} — ${s.n_referrer}→${s.n_dest} (${s.ratio}:1)</option>`).join("")
+    : `<option value="">no funnel data</option>`;
+  if(autorun && states.length){ sel.value=states[0].state; runNetwork(); }
+}
+async function runNetwork(){
+  const cap=$("nw-cap").value, state=$("nw-state").value;
+  if(!state){ $("nw-body").innerHTML=`<div class="empty">No state selected.</div>`; return; }
+  showLoading("nw-body", ["Coordinating a Copilot instance per facility","Routing each to its nearest trusted "+cap.toUpperCase(),"Aggregating the load — finding the chokepoints","Cross‑checking the top chokepoint's evidence","Writing the systemic‑risk finding"], "Care‑Network fleet");
+  try{
+    const r=await (await fetch("/api/network",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({capability:cap,state})})).json();
+    stopLoading(); renderNetwork(r);
+  }catch(e){ stopLoading(); $("nw-body").innerHTML=`<div class="empty">Network error: ${esc(e.message)}</div>`; }
+}
+window.runNetwork=runNetwork;
+function nwTrustBadge(t){ return `<span class="sig ${t==='strong'?'strong':'partial'}">${t} evidence</span>`; }
+function renderNetwork(r){
+  const cap=(r.capability||'').toUpperCase();
+  const trace=(r.trace||[]).map(traceStep).join("");
+  const head=`<div class="cp-plan"><b>${cap} referral network · ${esc(r.state||'')}</b> — <b>${(r.n_referrer||0).toLocaleString()}</b> facilities with no trusted ${cap} route to <b>${r.n_dest||0}</b> trusted destination${r.n_dest===1?'':'s'}${(r.n_referrer_plotted<r.n_referrer)?` · plotting nearest ${r.n_referrer_plotted}`:''}</div>`;
+  const finding = r.finding ? `<div class="nw-finding"><div class="nw-finding-h">⚠ Systemic risk — what the coordinated view sees</div>${esc(r.finding)}</div>` : "";
+  if(r.no_destination){
+    $("nw-body").innerHTML = head + `<div class="evidence-lbl" style="margin:12px 16px 4px">How the fleet worked</div><div class="cp-trace">${trace}</div>${finding}`;
+    return;
+  }
+  const bn=(r.bottlenecks||[]).map((b,i)=>`
+    <div class="nw-row ${b.spof?'spof':''}" onclick="selectFacility('${esc(b.id)}')">
+      <div class="nw-deg"><b>${b.in_degree}</b><span>refs</span></div>
+      <div class="nw-main">
+        <div class="nw-top"><span class="nw-rank">#${i+1}</span><b>${esc(b.name||'')}</b>
+          <span class="muted">${esc(b.city||'')}${b.avg_km!=null?' · avg '+b.avg_km+' km':''}</span>
+          ${nwTrustBadge(b.trust)}<span class="nw-share">${b.share}%</span></div>
+        ${b.why?`<div class="nw-why">⚠ ${esc(b.why)}</div>`:''}
+      </div></div>`).join("");
+  $("nw-body").innerHTML = head +
+    `<div class="evidence-lbl" style="margin:12px 16px 4px">How the fleet worked — coordinate → fan‑out → aggregate → skeptic → synthesize</div>
+     <div class="cp-trace">${trace}</div>
+     ${finding}
+     <div id="nw-map" class="dmap nw-map"></div>
+     <p class="legend" style="padding:2px 16px">
+       <span class="dot2" style="background:#2fa37a"></span> trusted (strong)
+       <span class="dot2" style="background:#d97706"></span> partial evidence
+       <span class="dot2" style="background:#fff;border:2px solid #dc2626"></span> single‑point‑of‑failure
+       <span class="muted">· bubble = referral load · grey = referring facility · click a chokepoint for its evidence</span></p>
+     <div class="evidence-lbl" style="margin:14px 16px 4px">Chokepoints — the destinations the region depends on · click any for its cited evidence</div>
+     ${bn}`;
+  drawNetworkMap(r);
+}
+function drawNetworkMap(r){
+  const el=$("nw-map"); if(!el) return;
+  if(!window.L){ el.innerHTML=`<div class="empty">Map needs Leaflet.</div>`; return; }
+  if(_nwLeaflet){ try{_nwLeaflet.remove();}catch(e){} _nwLeaflet=null; }
+  const map=L.map('nw-map',{scrollWheelZoom:false});
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:11,attribution:'© OpenStreetMap'}).addTo(map);
+  const pts=[];
+  (r.edges||[]).forEach(e=>{
+    L.polyline([[e.flat,e.flon],[e.tlat,e.tlon]],{color:'#94a3b8',weight:0.5,opacity:0.22}).addTo(map);
+    L.circleMarker([e.flat,e.flon],{radius:2.2,weight:0,fillColor:'#94a3b8',fillOpacity:0.5}).addTo(map);
+    pts.push([e.flat,e.flon]);
+  });
+  const col=t=>t==='strong'?'#2fa37a':'#d97706';
+  (r.nodes||[]).filter(n=>n.in_degree>0).forEach(n=>{
+    const rad=Math.max(5,Math.min(26,4+Math.sqrt(n.in_degree)*2.4));
+    L.circleMarker([n.lat,n.lon],{radius:rad,color:n.spof?'#dc2626':'#fff',weight:n.spof?2.6:0.8,fillColor:col(n.trust),fillOpacity:0.85})
+      .bindTooltip(`${n.name}${n.city?', '+n.city:''} — ${n.in_degree} referrals (${n.share}%) · ${n.trust} evidence${n.spof?' · ⚠ '+(n.why||'single point of failure'):''}`)
+      .on('click',()=>selectFacility(n.id)).addTo(map);
+    pts.push([n.lat,n.lon]);
+  });
+  const b=pts.length?L.latLngBounds(pts):null;
+  if(b) map.fitBounds(b,{padding:[18,18]}); else map.setView([22.6,81],4);
+  _nwLeaflet=map;
+  setTimeout(()=>{ try{ map.invalidateSize(); if(b) map.fitBounds(b,{padding:[18,18]}); }catch(e){} },150);
+}
 
 // ---- Public Health: population-scale agents ------------------------------ //
 let PH_MODE = "immun";

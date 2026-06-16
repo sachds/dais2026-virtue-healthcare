@@ -15,6 +15,7 @@
       <button class="tab active" data-view="desert">◧ Gap map</button>
       <button class="tab" data-view="trust">🏥 Trust Desk</button>
       <button class="tab" data-view="copilot">✦ Referral Copilot</button>
+      <button class="tab" data-view="network">⇄ Care Network</button>
       <button class="tab" data-view="publichealth">⚕ Public Health</button>
       <button class="tab" data-view="readiness">✓ Data Readiness</button>
     </nav>
@@ -95,6 +96,29 @@
         </div>
       </div>
       <section class="panel"><div class="body" id="copilot-body"><div class="empty">Ask a question above — the agent plans, retrieves from Lakebase, challenges each claim, governs the result, and shows the trace.</div></div></section>
+    </section>
+
+    <!-- Care Network — coordinated Copilot instances → the system view -->
+    <section class="pane" id="pane-network">
+      <div class="pane-head">
+        <h1>Care Network</h1>
+        <p>Coordinate a Copilot instance from every facility — then see the chokepoints the whole region depends on, and where the network has no fallback.</p>
+      </div>
+      <div class="nw-bar">
+        <span class="nw-lbl">Referral network for</span>
+        <select id="nw-cap">
+          <option value="icu">ICU</option>
+          <option value="maternity">Maternity</option>
+          <option value="emergency">Emergency</option>
+          <option value="oncology">Oncology</option>
+          <option value="trauma">Trauma</option>
+          <option value="nicu">NICU</option>
+        </select>
+        <span class="nw-lbl">in</span>
+        <select id="nw-state"><option value="">loading states…</option></select>
+        <button class="btn" id="nw-run" onclick="runNetwork()">⇄ Map the network</button>
+      </div>
+      <section class="panel"><div class="body" id="nw-body"><div class="empty">Pick a capability and a state — the fleet resolves every facility's nearest trusted destination and surfaces the chokepoints.</div></div></section>
     </section>
 
     <!-- Public Health — population-scale agents -->

@@ -921,6 +921,106 @@ def district_rollup(limit: int = 16) -> dict:
     return {"available": True, "mapped": r["m"], "n_districts": r["d"], "districts": districts}
 
 
+def referral_network(capability: str, state: str, max_referrers: int = 400) -> dict:
+    """Infer the referral graph for one capability in one state by coordinating the
+    Copilot's nearest-trusted resolution across EVERY facility: split facilities into
+    trusted-C destinations vs referrers (no trusted supply for C), edge each referrer
+    to its nearest destination, aggregate destination load (in-degree), and surface the
+    chokepoints the whole region depends on — flagging single-points-of-failure (sole
+    destination, or heavy load on a node whose own C evidence is only partial)."""
+    cap = capability if capability in CAPS else "icu"
+    with _conn() as c, c.cursor() as cur:
+        cur.execute(
+            """SELECT f.id, f.name, f.city, f.facility_type, f.latitude, f.longitude,
+                      max(CASE WHEN t.capability=%s AND t.signal IN ('strong','partial') THEN 1 ELSE 0 END) AS trusted,
+                      max(CASE WHEN t.capability=%s AND t.signal='strong' THEN 2
+                               WHEN t.capability=%s AND t.signal='partial' THEN 1 ELSE 0 END) AS sigrank
+               FROM facilities f LEFT JOIN trust_signals t ON t.facility_id=f.id
+               WHERE f.state=%s AND f.latitude IS NOT NULL AND f.longitude IS NOT NULL
+               GROUP BY f.id, f.name, f.city, f.facility_type, f.latitude, f.longitude""",
+            (cap, cap, cap, state))
+        rows = cur.fetchall()
+
+    dests = [r for r in rows if r["trusted"] == 1]
+    referrers_all = [r for r in rows if r["trusted"] == 0]
+    n_referrer_total = len(referrers_all)
+    referrers = referrers_all[:max_referrers]
+    base = {"available": True, "capability": cap, "state": state, "caps": CAPS,
+            "n_dest": len(dests), "n_referrer": n_referrer_total,
+            "n_referrer_plotted": len(referrers)}
+
+    if not dests:
+        return {**base, "no_destination": True, "nodes": [], "edges": [], "bottlenecks": [], "max_share": 0}
+
+    for d in dests:
+        d["in_degree"] = 0
+        d["km_sum"] = 0.0
+    edges = []
+    for r in referrers:
+        rlat, rlon = float(r["latitude"]), float(r["longitude"])
+        best, best_d2 = None, None
+        for d in dests:
+            d2 = (float(d["latitude"]) - rlat) ** 2 + (float(d["longitude"]) - rlon) ** 2
+            if best_d2 is None or d2 < best_d2:
+                best_d2, best = d2, d
+        best["in_degree"] += 1
+        best["km_sum"] += best_d2 ** 0.5 * 111
+        edges.append({"flat": round(rlat, 4), "flon": round(rlon, 4),
+                      "tlat": round(float(best["latitude"]), 4), "tlon": round(float(best["longitude"]), 4)})
+
+    total = len(referrers) or 1
+    nodes = []
+    sole = len(dests) == 1
+    for d in dests:
+        deg = d["in_degree"]
+        nodes.append({"id": d["id"], "name": d["name"], "city": d["city"], "facility_type": d["facility_type"],
+                      "lat": round(float(d["latitude"]), 4), "lon": round(float(d["longitude"]), 4),
+                      "in_degree": deg, "share": round(100 * deg / total),
+                      "trust": "strong" if d["sigrank"] == 2 else "partial",
+                      "avg_km": round(d["km_sum"] / deg, 1) if deg else None})
+    nodes.sort(key=lambda n: -n["in_degree"])
+    # Flag the risks once ranks are known. The systemic risk is rarely raw share — it's a
+    # MOST-DEPENDED-ON node whose own evidence is only partial (everyone routes to a place
+    # that may not actually deliver), the sole destination, or a true high-load funnel.
+    cu = cap.upper()
+    for rank, n in enumerate(nodes):
+        risk, why = "", ""
+        if sole and n["in_degree"]:
+            risk, why = "sole", f"the ONLY trusted {cu} facility in {state} — referrals have no fallback"
+        elif n["share"] >= 40:
+            risk, why = "load", f"{n['share']}% of {state}'s {cu} referrals funnel to this one node"
+        elif rank < 3 and n["in_degree"] >= 3 and n["trust"] == "partial":
+            risk, why = "weak-hub", (f"the #{rank + 1} most-depended-on {cu} destination "
+                                     f"({n['in_degree']} facilities), but its OWN {cu} evidence is only partial")
+        n["risk"], n["why"], n["spof"] = risk, why, bool(risk)
+    bottlenecks = [n for n in nodes if n["in_degree"] > 0][:8]
+    return {**base, "no_destination": False, "nodes": nodes, "edges": edges,
+            "bottlenecks": bottlenecks, "sole": sole,
+            "max_share": nodes[0]["share"] if nodes else 0,
+            "n_spof": sum(1 for n in nodes if n["spof"])}
+
+
+def network_states(capability: str, limit: int = 14) -> list[dict]:
+    """States with a meaningful referral funnel for C (enough referrers, few enough
+    trusted destinations) — the picklist for the Care-Network view, worst funnel first."""
+    cap = capability if capability in CAPS else "icu"
+    with _conn() as c, c.cursor() as cur:
+        cur.execute(
+            """WITH g AS (
+                 SELECT f.state, f.id,
+                        max(CASE WHEN t.capability=%s AND t.signal IN ('strong','partial') THEN 1 ELSE 0 END) trusted
+                 FROM facilities f LEFT JOIN trust_signals t ON t.facility_id=f.id
+                 WHERE f.latitude IS NOT NULL AND f.state IS NOT NULL AND f.state<>''
+                 GROUP BY f.state, f.id)
+               SELECT state, count(*) n_geo, sum(trusted) n_dest, sum(1-trusted) n_referrer
+               FROM g GROUP BY state
+               HAVING sum(trusted) >= 1 AND sum(1-trusted) >= 20
+               ORDER BY (sum(1-trusted)::float / greatest(sum(trusted),1)) DESC LIMIT %s""",
+            (cap, limit))
+        return [{"state": r["state"], "n_dest": int(r["n_dest"]), "n_referrer": int(r["n_referrer"]),
+                 "ratio": round(r["n_referrer"] / max(1, r["n_dest"]))} for r in cur.fetchall()]
+
+
 def health() -> dict:
     try:
         with _conn() as c, c.cursor() as cur:

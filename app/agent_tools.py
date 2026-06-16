@@ -82,6 +82,15 @@ def district_profile(district: str) -> dict:
     return db.district_profile(district)
 
 
+def referral_network(capability: str, state: str) -> dict:
+    """Coordinate the nearest-trusted resolution across EVERY facility in a state and
+    aggregate it into the inferred referral graph: which few destinations the whole
+    region routes its `capability` referrals to, and the single-points-of-failure that
+    carry heavy load on only-partial evidence. The system-level view a single referral
+    can't see — the same tool the in-app Care Network and an Omnigent fleet both call."""
+    return db.referral_network(capability, state)
+
+
 # Tool registry — names → callables, used by mcp_server.py and the copilot trace.
 TOOLS = {
     "find_facilities": find_facilities,
@@ -90,4 +99,5 @@ TOOLS = {
     "record_decision": record_decision,
     "under_immunized_districts": under_immunized_districts,
     "district_profile": district_profile,
+    "referral_network": referral_network,
 }
