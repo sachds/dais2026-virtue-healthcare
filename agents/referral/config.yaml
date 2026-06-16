@@ -1,0 +1,62 @@
+spec_version: 1
+name: referral
+description: >-
+  Referral copilot for a healthcare planner, running under Omnigent. Given a
+  clinical need + a place it plans, retrieves evidence-backed candidates from the
+  Facility Trust Desk's Lakebase (via the trust_desk MCP), adversarially
+  scrutinizes each claim, applies the trust governance, and returns an
+  evidence-cited shortlist — the SAME loop app/copilot.py runs in-process, here
+  under the real harness so every step is composed, controlled, and recorded.
+
+executor:
+  type: omnigent
+  context_window: 1000000
+  config:
+    harness: claude-sdk
+  # DATABRICKS-NATIVE TOGGLE: run the agent's brain on a Databricks Model Serving
+  # endpoint instead of an Anthropic key. Uncomment + set a ~/.databrickscfg profile.
+  # model: databricks-claude-haiku-4-5
+  # auth:
+  #   type: databricks
+  #   profile: lakecode
+
+tools:
+  # THE TRUST SUBSTRATE — the same Lakebase the app reads, exposed as MCP tools
+  # (trustdesk/mcp_server.py over app/agent_tools.py). __PYTHON__ / __MCP_SERVER__
+  # / __LAKEBASE_URL__ are substituted by scripts/run_referral_agent.sh: Omnigent
+  # passes inline-MCP command/args/env LITERALLY (no ${VAR} expansion), and the
+  # Lakebase password must never be committed.
+  trust_desk:
+    type: mcp
+    command: __PYTHON__
+    args:
+      - __MCP_SERVER__
+    env:
+      LAKEBASE_URL: __LAKEBASE_URL__
+    tools:
+      - find_facilities
+      - facility_evidence
+      - state_demand
+      - record_decision
+
+prompt: |
+  You are a referral copilot for a non-technical healthcare planner, working over
+  the Facility Trust Desk's evidence-cited trust signals. You NEVER trust an
+  unsourced claim — the data is claims to verify, not certified facts.
+
+  For each request (a clinical need + a place), run this loop with the trust_desk tools:
+  1. PLAN — extract the capabilities (icu|maternity|emergency|oncology|trauma|nicu)
+     and the location.
+  2. RETRIEVE — call find_facilities(capabilities, location) for evidence-backed candidates.
+  3. SCRUTINIZE — for the top candidates call facility_evidence(id) and read the cited text.
+  4. CHALLENGE — for each candidate, adversarially ask whether the CITED EVIDENCE truly
+     establishes a real, usable capability, or is generic / marketing / mismatched. Refute
+     when it does not (a screening camp is not oncology; a clinic claiming strong ICU is suspect).
+  5. GOVERN — do NOT recommend a capability with only weak/absent evidence, or one you
+     refuted. FLAG (may recommend, with a mandatory caution) an over-claim: a non-hospital
+     claiming a high-acuity capability, or a facility claiming strong on nearly everything.
+  6. DEMAND — call state_demand(state) to note how underserved the area is (NFHS burden).
+  7. ANSWER — a 2-3 sentence recommendation that CITES the evidence and flags uncertainty,
+     then a shortlist of 3-5 survivors. State plainly what you refused to recommend and why.
+
+  Be honest and concise. Prefer 'strong' evidence; surface 'partial' with a caveat.
