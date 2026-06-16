@@ -96,13 +96,16 @@ async function init(){
 }
 
 // ---- Track 2: Medical Desert gap map ------------------------------------- //
-let DESERT_VIEW = "map", DESERT_CAPS = [];
+let DESERT_VIEW = "map", DESERT_CAPS = ["icu"];   // default to a capability so real deserts show
 async function showDesert(){
   const chips = DESERT_VIEW==='map' ? `<div class="cap-chips">
-      <span class="cap-chip-lbl">Deserts in:</span>
-      <button class="cap-chip ${DESERT_CAPS.length===0?'on':''}" onclick="setDesertCaps([])">any</button>
+      <span class="cap-chip-lbl">Show deserts for:</span>
       ${CAPS.map(c=>`<button class="cap-chip ${DESERT_CAPS.includes(c)?'on':''}" onclick="toggleDesertCap('${c}')">${c.toUpperCase()}</button>`).join("")}
+      <button class="cap-chip ${DESERT_CAPS.length===0?'on':''}" onclick="setDesertCaps([])" title="districts with no trusted supply for ANY capability">any</button>
     </div>` : "";
+  const explain = DESERT_VIEW==='map'
+    ? `<p class="desert-explain"><b style="color:var(--weak)">Red = a care desert</b> — the district has facilities, but <b>none with trusted evidence</b> for the selected capability. <b style="color:var(--strong)">Green</b> = at least one trusted. Pick a capability above (or several); switch to <b>Table ▦</b> to rank deserts by NFHS‑5 health burden — where the gap is most <i>dangerous</i>.</p>`
+    : `<p class="desert-explain">Each cell = a state × capability — greener = more facilities with trusted evidence. <b>need</b> = NFHS‑5 health burden. The list below ranks the most <b>dangerous</b> shortfalls: high burden × thin trusted supply.</p>`;
   $("desert-body").innerHTML = `
     <div class="desert-bar">
       <div class="seg">
@@ -111,6 +114,7 @@ async function showDesert(){
       </div>
       ${chips}
     </div>
+    ${explain}
     <div id="desert-view"><div class="empty">Loading…</div></div>`;
   (DESERT_VIEW==='map' ? showDesertMap : showDesertTable)();
 }
@@ -178,10 +182,11 @@ function renderDesertMap(g){
   const capLbl = g.capLabel || (g.capability==='any' ? 'any capability' : (g.capability||'').toUpperCase());
   const legend = `
     <p class="legend">
+      <b>${capLbl}</b> &nbsp;
+      <span class="dot2" style="background:${col.gap}"></span> care desert (${counts.gap})
       <span class="dot2" style="background:${col.served}"></span> trusted supply (${counts.served})
-      <span class="dot2" style="background:${col.gap}"></span> confirmed gap (${counts.gap})
-      <span class="dot2" style="background:${col.datapoor}"></span> too few scored (${counts.datapoor})
-      <span class="muted">· ${ds.length} districts · bubble = # facilities · <b>${capLbl}</b> · click to drill in</span>
+      <span class="dot2" style="background:${col.datapoor}"></span> too little data (${counts.datapoor})
+      <span class="muted">· bubble = # facilities · click a district for its facilities</span>
     </p>`;
   if(window.L){                                   // real geographic map: color-coded deserts on OSM tiles
     $("desert-view").innerHTML = legend + `<div id="dmap" class="dmap"></div>`;
