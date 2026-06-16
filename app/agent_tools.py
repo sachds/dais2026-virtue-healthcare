@@ -70,10 +70,24 @@ def record_decision(facility_id: str, body: str, capability: str | None = None,
     return {"ok": True, "id": row["id"], "facility_id": facility_id}
 
 
+def under_immunized_districts(limit: int = 8) -> list[dict]:
+    """The lowest childhood-immunization districts that have local supply to run a
+    campaign (NFHS-5 × facilities) — the immunization agent's targets."""
+    return db.under_immunized(limit=limit)
+
+
+def district_profile(district: str) -> dict:
+    """NFHS-5 health indicators (immunization, NCD, maternal) + our supply (facilities,
+    beds, physicians, top hospitals) for one district — for campaign siting / outbreak capacity."""
+    return db.district_profile(district)
+
+
 # Tool registry — names → callables, used by mcp_server.py and the copilot trace.
 TOOLS = {
     "find_facilities": find_facilities,
     "facility_evidence": facility_evidence,
     "state_demand": state_demand,
     "record_decision": record_decision,
+    "under_immunized_districts": under_immunized_districts,
+    "district_profile": district_profile,
 }

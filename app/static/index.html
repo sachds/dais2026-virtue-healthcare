@@ -13,6 +13,7 @@
       <button class="tab active" data-view="desert">◧ Gap map</button>
       <button class="tab" data-view="trust">🏥 Trust Desk</button>
       <button class="tab" data-view="copilot">✦ Referral Copilot</button>
+      <button class="tab" data-view="publichealth">⚕ Public Health</button>
       <button class="tab" data-view="readiness">✓ Data Readiness</button>
     </nav>
     <div class="spacer"></div>
@@ -87,6 +88,22 @@
         </div>
       </div>
       <section class="panel"><div class="body" id="copilot-body"><div class="empty">Ask a question above — the agent plans, retrieves from Lakebase, challenges each claim, governs the result, and shows the trace.</div></div></section>
+    </section>
+
+    <!-- Public Health — population-scale agents -->
+    <section class="pane" id="pane-publichealth">
+      <div class="pane-head">
+        <h1>Public Health</h1>
+        <p>Population‑scale agents over NFHS‑5 demand × supply — target under‑immunized districts, and plan outbreak isolation.</p>
+      </div>
+      <div class="ph-modes">
+        <div class="seg">
+          <button class="seg-btn active" data-phm="immun" onclick="setPhMode('immun')">💉 Immunization campaign</button>
+          <button class="seg-btn" data-phm="outbreak" onclick="setPhMode('outbreak')">🦠 Outbreak response</button>
+        </div>
+      </div>
+      <div id="ph-controls"></div>
+      <section class="panel"><div class="body" id="ph-body"><div class="empty">Find the under‑immunized districts and draft a campaign.</div></div></section>
     </section>
 
     <!-- Track 4 — Data Readiness Desk -->

@@ -19,6 +19,7 @@ function showView(name){
   activate(name);
   if(name==="desert") showDesert();
   else if(name==="readiness") showReadiness();
+  else if(name==="publichealth") showPublicHealth();
   else if(name==="trust" && !$("list").querySelector(".fac")) loadFacilities();
   window.scrollTo(0,0);
 }
@@ -419,6 +420,79 @@ function renderCopilot(r){
 window.cpEx=(q)=>{$("cp-q").value=q;runCopilot();};
 $("cp-ask").onclick=runCopilot;
 $("cp-q").addEventListener("keydown",e=>{if(e.key==="Enter")runCopilot();});
+
+// ---- Public Health: population-scale agents ------------------------------ //
+let PH_MODE = "immun";
+function traceStep(s){
+  const prov = s.model?`<span class="tr-prov">${esc(s.model)}</span>`:(s.tool?`<span class="tr-tool">${esc(s.tool)}</span>`:"");
+  return `<div class="tr-step"><span class="tr-role">${esc(s.role||s.step)}</span><span class="tr-detail">${esc(s.detail||"")}</span>${prov}</div>`;
+}
+function mdLite(s){
+  return esc(s)
+    .replace(/^#{1,3}\s+(.*)$/gm,'<h3>$1</h3>')
+    .replace(/^#{4,6}\s+(.*)$/gm,'<h4>$1</h4>')
+    .replace(/\*\*(.+?)\*\*/g,'<b>$1</b>')
+    .replace(/^\s*[-*]\s+(.*)$/gm,'• $1')
+    .replace(/\n/g,'<br>');
+}
+function setPhMode(m){
+  PH_MODE = m;
+  document.querySelectorAll('[data-phm]').forEach(b=>b.classList.toggle('active', b.dataset.phm===m));
+  setPhControls();
+  $("ph-body").innerHTML = `<div class="empty">${m==='immun'?'Find the under‑immunized districts and draft a campaign.':'Enter a district + disease to draft an isolation protocol.'}</div>`;
+}
+window.setPhMode = setPhMode;
+function setPhControls(){
+  $("ph-controls").innerHTML = PH_MODE==='immun'
+   ? `<div class="ph-bar"><input id="ph-region" placeholder="District (optional — leave blank for worst nationwide)"/><button class="btn" onclick="runImmun()">💉 Plan campaign</button></div>`
+   : `<div class="ph-bar"><input id="ph-oregion" placeholder="District (e.g. Jhansi)"/><input id="ph-disease" placeholder="Disease (e.g. measles)"/><button class="btn" onclick="runOutbreak()">🦠 Plan response</button></div>`;
+}
+function showPublicHealth(){ setPhControls(); }
+async function runImmun(){
+  const region = ($("ph-region").value||"").trim();
+  $("ph-body").innerHTML = `<div class="empty">Targeting under‑immunized districts → drafting the campaign…</div>`;
+  try{
+    const r = await (await fetch("/api/publichealth/immunization",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({region})})).json();
+    renderImmun(r);
+  }catch(e){ $("ph-body").innerHTML = `<div class="empty">Agent error: ${esc(e.message)}</div>`; }
+}
+async function runOutbreak(){
+  const region = ($("ph-oregion").value||"").trim(), disease = ($("ph-disease").value||"").trim();
+  if(!region){ $("ph-body").innerHTML = `<div class="empty">Enter a district.</div>`; return; }
+  $("ph-body").innerHTML = `<div class="empty">Assessing local isolation capacity → drafting protocol…</div>`;
+  try{
+    const r = await (await fetch("/api/publichealth/outbreak",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({region,disease})})).json();
+    renderOutbreak(r);
+  }catch(e){ $("ph-body").innerHTML = `<div class="empty">Agent error: ${esc(e.message)}</div>`; }
+}
+window.runImmun = runImmun; window.runOutbreak = runOutbreak;
+function renderImmun(r){
+  const trace = (r.trace||[]).map(traceStep).join("");
+  const targets = (r.targets||[]).map(t=>`<tr>
+    <td class="svc-cat">${esc(t.district)} <span class="muted" style="font-weight:400">${esc(t.state||'')}</span></td>
+    <td><b style="color:var(--weak)">${t.immunization}%</b></td>
+    <td>${t.facilities}</td><td>${t.physicians}</td></tr>`).join("");
+  $("ph-body").innerHTML = `
+    <div class="evidence-lbl" style="margin:2px 16px 4px">Agent — target → plan</div>
+    <div class="cp-trace">${trace}</div>
+    ${targets?`<div class="evidence-lbl" style="margin:12px 16px 4px">Under‑immunized targets (with local supply to run it)</div>
+      <div style="padding:0 16px"><table class="svc-table dist"><thead><tr><th>District</th><th>Fully immunized</th><th>Facilities</th><th>Physicians</th></tr></thead><tbody>${targets}</tbody></table></div>`:''}
+    <div class="evidence-lbl" style="margin:14px 16px 4px">Campaign plan</div>
+    <div class="ph-plan">${mdLite(r.plan||'')}</div>`;
+}
+function renderOutbreak(r){
+  const trace = (r.trace||[]).map(traceStep).join("");
+  const sup = (r.profile&&r.profile.supply)||{};
+  const top = (r.profile&&r.profile.top_facilities)||[];
+  const caps = top.map(t=>`<span class="chip">${esc(t.name)} · ${t.total_beds||0} beds</span>`).join(" ");
+  $("ph-body").innerHTML = `
+    <div class="cp-plan"><b>Outbreak signal:</b> ${esc(r.disease||'disease')} in <b>${esc(r.region||'')}</b> · local capacity: ${sup.hospitals||0} hospitals · ${sup.beds||0} beds · ${sup.physicians||0} physicians</div>
+    <div class="evidence-lbl" style="margin:12px 16px 4px">Agent — assess → protocol</div>
+    <div class="cp-trace">${trace}</div>
+    ${caps?`<div style="padding:2px 16px 0">${caps}</div>`:''}
+    <div class="evidence-lbl" style="margin:12px 16px 4px">Isolation &amp; containment protocol</div>
+    <div class="ph-plan">${mdLite(r.plan||'')}</div>`;
+}
 
 window.selectFacility=selectFacility;window.override=override;window.addNote=addNote;window.shortlistFac=shortlistFac;
 init();

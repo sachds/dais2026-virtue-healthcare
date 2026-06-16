@@ -103,3 +103,18 @@ async def copilot(payload: dict):
         return JSONResponse({"error": "query required"}, status_code=400)
     from app import copilot as cp
     return JSONResponse(await asyncio.to_thread(cp.run, q))
+
+
+@app.post("/api/publichealth/immunization")
+async def ph_immunization(payload: dict):
+    from app import publichealth as ph
+    return JSONResponse(await asyncio.to_thread(ph.immunization_campaign, payload.get("region", "")))
+
+
+@app.post("/api/publichealth/outbreak")
+async def ph_outbreak(payload: dict):
+    region = (payload.get("region") or "").strip()
+    if not region:
+        return JSONResponse({"error": "region required"}, status_code=400)
+    from app import publichealth as ph
+    return JSONResponse(await asyncio.to_thread(ph.outbreak_protocol, region, payload.get("disease", "")))

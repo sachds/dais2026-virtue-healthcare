@@ -475,6 +475,62 @@ def services_overview() -> dict:
             "missing_beds": a["missing_beds"], "missing_specialty": a["missing_specialty"]}
 
 
+def _dkey(district: str) -> str:
+    return re.sub(r"\s+", " ", (district or "").strip()).upper()
+
+
+def under_immunized(limit: int = 8, min_facilities: int = 3) -> list[dict]:
+    """The lowest-immunization districts that ALSO have local supply to run a campaign —
+    the agentic immunization campaign's targets (NFHS-5 × facility_services)."""
+    with _conn() as c, c.cursor() as cur:
+        try:
+            cur.execute(
+                """SELECT nd.district, nd.state,
+                          round(nd.full_immunization::numeric,1)::float8 AS immunization,
+                          round(nd.penta3::numeric,1)::float8 AS penta3,
+                          round(nd.bcg::numeric,1)::float8 AS bcg,
+                          round(nd.insurance::numeric,1)::float8 AS insurance,
+                          count(fs.facility_id)::int AS facilities,
+                          coalesce(sum(fs.n_doctors),0)::int AS physicians,
+                          coalesce(sum(fs.total_beds),0)::int AS beds
+                   FROM nfhs_district nd JOIN facility_services fs ON fs.district = nd.dkey
+                   WHERE nd.full_immunization IS NOT NULL
+                   GROUP BY nd.district, nd.state, nd.full_immunization, nd.penta3, nd.bcg, nd.insurance
+                   HAVING count(fs.facility_id) >= %s
+                   ORDER BY nd.full_immunization ASC LIMIT %s""", (min_facilities, limit))
+            return cur.fetchall()
+        except Exception:  # noqa: BLE001 — nfhs_district not loaded
+            return []
+
+
+def district_profile(district: str) -> dict:
+    """NFHS-5 health indicators + our supply for one district — what the public-health
+    agents reason over (campaign siting, isolation capacity)."""
+    dk = _dkey(district)
+    with _conn() as c, c.cursor() as cur:
+        nfhs = None
+        try:
+            cur.execute("SELECT state, district, full_immunization, bcg, penta3, diabetes, "
+                        "hypertension, institutional_birth, insurance, stunting "
+                        "FROM nfhs_district WHERE dkey=%s LIMIT 1", (dk,))
+            nfhs = cur.fetchone()
+        except Exception:  # noqa: BLE001
+            nfhs = None
+        cur.execute(
+            """SELECT count(*) AS facilities, coalesce(sum(total_beds),0) AS beds,
+                      coalesce(sum(n_doctors),0) AS physicians,
+                      count(*) FILTER (WHERE facility_type IN ('hospital','medicalcollege','nursinghome','medicalcenter')) AS hospitals
+               FROM facility_services WHERE district=%s""", (dk,))
+        supply = cur.fetchone()
+        cur.execute(
+            """SELECT f.name, f.city, fs.total_beds, fs.n_doctors
+               FROM facility_services fs JOIN facilities f ON f.id=fs.facility_id
+               WHERE fs.district=%s AND fs.total_beds>0
+               ORDER BY fs.total_beds DESC NULLS LAST LIMIT 6""", (dk,))
+        top = cur.fetchall()
+    return {"district": district, "dkey": dk, "nfhs": nfhs, "supply": supply, "top_facilities": top}
+
+
 def district_supply(capability: str = "any") -> dict:
     """District-level trusted supply with geographic centroids — for the desert MAP.
     Each district: centroid (avg facility lat/long), facility count, and whether it has
