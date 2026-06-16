@@ -24,6 +24,34 @@ function showLoading(elId, steps, lead){
 }
 function stopLoading(){ clearInterval(_loadTimer); }
 
+// ---- Focus spine: a shared working context carried across every scale ------ //
+let FOCUS = { region:"", capability:"", facility:null };   // facility = {id, name}
+function setFocus(patch){ Object.assign(FOCUS, patch||{}); renderFocus(); }
+function clearFocus(){ FOCUS = { region:"", capability:"", facility:null }; renderFocus(); }
+window.setFocus=setFocus; window.clearFocus=clearFocus;
+function renderFocus(){
+  const bar=$("focus-bar"); if(!bar) return;
+  const f=FOCUS;
+  if(!(f.region||f.capability||f.facility)){ bar.className="focus-bar"; bar.innerHTML=""; return; }
+  bar.className="focus-bar on";
+  const chips=[];
+  if(f.region) chips.push(`<span class="fchip reg">🗺 ${esc(f.region)}<b class="fx" onclick="setFocus({region:''})">×</b></span>`);
+  if(f.capability) chips.push(`<span class="fchip cap">${esc(f.capability.toUpperCase())}<b class="fx" onclick="setFocus({capability:''})">×</b></span>`);
+  if(f.facility) chips.push(`<span class="fchip fac">🏥 ${esc(f.facility.name||'facility')}<b class="fx" onclick="setFocus({facility:null})">×</b></span>`);
+  const acts=[];
+  if(f.region){ acts.push(`<button class="fjump" onclick="focusGo('network')">⇄ Network</button>`);
+                acts.push(`<button class="fjump" onclick="focusGo('trust')">🏥 ${f.facility?'Open facility':'Facilities'}</button>`); }
+  else if(f.facility){ acts.push(`<button class="fjump" onclick="focusGo('trust')">🏥 Open facility</button>`); }
+  if(f.facility) acts.push(`<button class="fjump pat" onclick="focusGo('refer')">✦ Refer a patient</button>`);
+  bar.innerHTML=`<span class="focus-lbl">Focus</span>${chips.join("")}<span class="focus-acts">${acts.join("")}</span><button class="focus-clear" onclick="clearFocus()">clear ✕</button>`;
+}
+function focusGo(t){
+  if(t==='network') openNetwork(FOCUS.capability||'icu', FOCUS.region);
+  else if(t==='trust'){ if(FOCUS.facility) selectFacility(FOCUS.facility.id); else drill(FOCUS.region, FOCUS.capability||''); }
+  else if(t==='refer' && FOCUS.facility){ activate('copilot'); $('cp-from').value=FOCUS.facility.name||''; $('cp-q').value=''; window.scrollTo(0,0); $('cp-q').focus(); }
+}
+window.focusGo=focusGo;
+
 // ---- view / pane switching ----------------------------------------------- //
 function activate(name){
   document.querySelectorAll(".pane").forEach(p=>p.classList.toggle("active", p.id==="pane-"+name));
@@ -114,6 +142,7 @@ async function showDesertMap(){
 }
 function districtDrill(district, cap){
   activate("trust");
+  if(cap && cap!=='any') setFocus({capability:cap});
   $("q").value = district; $("state").value = ""; $("capability").value = (cap && cap!=='any') ? cap : ""; $("signal").value = "";
   updateHint(); loadFacilities(); window.scrollTo(0,0);
 }
@@ -213,6 +242,7 @@ function renderDesert(g){
 }
 function drill(state, cap){
   activate("trust");
+  if(state||cap) setFocus({region:state||FOCUS.region, capability:cap||FOCUS.capability});
   $("state").value = state; $("capability").value = cap; $("signal").value = "";
   updateHint(); loadFacilities();
   window.scrollTo(0,0);
@@ -386,6 +416,7 @@ async function selectFacility(id){
   if(!d.facility){ $("fac-detail").innerHTML = `<div class="empty">Facility not found.</div>`; return; }
   const f = d.facility;
   _curFacName = f.name || "";
+  setFocus(!FOCUS.region && f.state ? {facility:{id,name:_curFacName}, region:f.state} : {facility:{id,name:_curFacName}});
   $("detail-title").textContent = f.name || "Facility";
   const srcs = parseArr(f.source_urls).filter(Boolean).slice(0,3);
   const links = srcs.map(u=>`<a class="chip" href="${esc(u)}" target="_blank" rel="noopener">source ↗</a>`).join("");
@@ -630,6 +661,7 @@ async function openNetwork(cap, state){
     if(![...sel.options].some(o=>o.value===state)){ const o=document.createElement('option'); o.value=state; o.textContent=state; sel.insertBefore(o, sel.firstChild); }
     sel.value = state;
   }
+  setFocus({region:state||FOCUS.region, capability:$('nw-cap').value});
   window.scrollTo(0,0); runNetwork();
 }
 window.openNetwork = openNetwork;

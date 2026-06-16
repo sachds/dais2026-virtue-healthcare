@@ -24,6 +24,23 @@ header .tabs{display:flex;gap:5px;margin-left:8px}
 .tab:hover{background:var(--bg);color:var(--ink)}
 .tab.active{background:var(--blue-soft);border-color:#cdddf5;color:var(--blue)}
 
+/* Focus spine — the shared working context carried across scales */
+.focus-bar{display:none}
+.focus-bar.on{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 22px;background:#eef3fb;border-bottom:1px solid var(--line)}
+.focus-lbl{font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--muted)}
+.fchip{display:inline-flex;align-items:center;gap:4px;font-size:12.5px;font-weight:600;padding:3px 6px 3px 11px;border-radius:999px;border:1px solid #cdddf5;background:#fff;color:#1f2a40}
+.fchip.cap{color:var(--blue)}
+.fchip.fac{color:var(--strong);border-color:#bfe6d4}
+.fchip .fx{color:var(--muted);font-weight:700;cursor:pointer;padding:0 3px;border-radius:50%}
+.fchip .fx:hover{color:var(--weak);background:var(--bg)}
+.focus-acts{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
+.fjump{font:inherit;font-size:12px;font-weight:700;padding:5px 10px;border-radius:8px;border:1px solid #cdddf5;background:#fff;color:var(--blue);cursor:pointer}
+.fjump:hover{background:var(--blue-soft)}
+.fjump.pat{color:var(--partial);border-color:#f3d9a8}
+.fjump.pat:hover{background:var(--partial-bg)}
+.focus-clear{font:inherit;font-size:11.5px;color:var(--muted);background:transparent;border:0;cursor:pointer;padding:4px 6px}
+.focus-clear:hover{color:var(--weak)}
+
 .controls{display:flex;gap:10px;flex-wrap:wrap;padding:12px 14px;background:var(--panel);border:1px solid var(--line);border-radius:12px;margin-bottom:14px}
 .controls input,.controls select{padding:8px 11px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink);font:inherit}
 .controls input{min-width:280px}
